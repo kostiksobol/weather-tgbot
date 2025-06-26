@@ -1,20 +1,28 @@
 pub mod bot;
 pub mod weather_api;
 pub mod state;
+pub mod storage;
+pub mod alerts;
+pub mod scheduler;
 
 use teloxide::{
     dispatching::{UpdateFilterExt, UpdateHandler},
     prelude::*,
 };
+use std::env;
 
 /// Инициализирует все настройки бота
 /// Должна вызываться и в реальном боте, и в тестере для обеспечения идентичной логики
 pub fn initialize_bot() {
-    // Загружаем переменные окружения из .env файла
-    dotenv::dotenv().ok();
+    if env::var("WEATHER_API_KEY").is_err() {
+        dotenv::dotenv().ok();
+    }
     
-    // Инициализируем логирование (только если еще не инициализировано)
-    let _ = pretty_env_logger::try_init();
+    if env::var("WEATHER_API_KEY").is_err() {
+        panic!("WEATHER_API_KEY environment variable must be set");
+    }
+    
+    pretty_env_logger::init();
     
     log::info!("Bot initialization completed");
 }

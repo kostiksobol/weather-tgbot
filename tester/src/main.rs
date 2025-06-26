@@ -1,6 +1,7 @@
 use teloxide::types::{InlineKeyboardButtonKind, Message};
 use teloxide_tests::{MockBot, MockCallbackQuery, MockMessageText, MockUser};
-use weather_tgbot::{initialize_bot, handler_tree, state::create_shared_state};
+use weather_tgbot::{initialize_bot, handler_tree, state::create_test_shared_state};
+use std::fs;
 
 #[tokio::main]
 async fn main() {
@@ -11,7 +12,7 @@ async fn main() {
 
     // === SETUP ===
     let alice = MockUser::new().id(123).first_name("Alice").build();
-    let shared_state = create_shared_state();
+    let shared_state = create_test_shared_state().expect("Failed to create test shared state");
     let mut bot = MockBot::new(MockMessageText::new(), handler_tree(shared_state));
 
     // === TEST /START COMMAND ===
@@ -28,19 +29,32 @@ async fn main() {
     println!("Response: {}", start_message.text().unwrap_or("(no text)"));
     print_buttons(start_message);
 
-    // === TEST WEATHER FLOW - LONDON ===
-    println!("\n=== TESTING WEATHER FOR LONDON ===");
+    // === TEST CURRENT WEATHER FLOW - LONDON ===
+    println!("\n=== TESTING CURRENT WEATHER FOR LONDON ===");
     
-    println!("\n--> User presses button: Get Weather");
+    println!("\n--> User presses button: Current weather");
     let weather_callback = MockCallbackQuery::new()
-        .data("get_weather")
+        .data("current_weather_menu")
         .message(start_message.clone());
     bot.update(weather_callback);
     bot.dispatch().await;
 
     let weather_responses = bot.get_responses();
     if let Some(message) = weather_responses.sent_messages.last() {
-        println!("Button response: {}", message.text().unwrap_or("(no text)"));
+        println!("Current weather menu: {}", message.text().unwrap_or("(no text)"));
+        print_buttons(message);
+    }
+
+    println!("\n--> User presses button: For any city");
+    let any_city_callback = MockCallbackQuery::new()
+        .data("get_weather_for")
+        .message(start_message.clone());
+    bot.update(any_city_callback);
+    bot.dispatch().await;
+
+    let any_city_responses = bot.get_responses();
+    if let Some(message) = any_city_responses.sent_messages.last() {
+        println!("Enter city prompt: {}", message.text().unwrap_or("(no text)"));
     }
 
     println!("\n--> User sends: London");
@@ -48,21 +62,34 @@ async fn main() {
     bot.dispatch().await;
 
     let london_responses = bot.get_responses();
-    print_weather_responses(&london_responses, "London");
+    print_current_weather_response(&london_responses, "London");
 
-    // === TEST WEATHER FLOW - TOKYO ===
-    println!("\n=== TESTING WEATHER FOR TOKYO ===");
+    // === TEST FORECAST FLOW - TOKYO ===
+    println!("\n=== TESTING FORECAST FOR TOKYO ===");
     
-    println!("\n--> User presses button: Get Weather");
-    let weather_callback2 = MockCallbackQuery::new()
-        .data("get_weather")
+    println!("\n--> User presses button: Forecast");
+    let forecast_callback = MockCallbackQuery::new()
+        .data("forecast_menu")
         .message(start_message.clone());
-    bot.update(weather_callback2);
+    bot.update(forecast_callback);
     bot.dispatch().await;
 
-    let weather_responses2 = bot.get_responses();
-    if let Some(message) = weather_responses2.sent_messages.last() {
-        println!("Button response: {}", message.text().unwrap_or("(no text)"));
+    let forecast_responses = bot.get_responses();
+    if let Some(message) = forecast_responses.sent_messages.last() {
+        println!("Forecast menu: {}", message.text().unwrap_or("(no text)"));
+        print_buttons(message);
+    }
+
+    println!("\n--> User presses button: For any city");
+    let forecast_any_city_callback = MockCallbackQuery::new()
+        .data("get_forecast_for")
+        .message(start_message.clone());
+    bot.update(forecast_any_city_callback);
+    bot.dispatch().await;
+
+    let forecast_any_city_responses = bot.get_responses();
+    if let Some(message) = forecast_any_city_responses.sent_messages.last() {
+        println!("Enter city for forecast: {}", message.text().unwrap_or("(no text)"));
     }
 
     println!("\n--> User sends: Tokyo");
@@ -70,21 +97,60 @@ async fn main() {
     bot.dispatch().await;
 
     let tokyo_responses = bot.get_responses();
-    print_weather_responses(&tokyo_responses, "Tokyo");
+    print_forecast_response(&tokyo_responses, "Tokyo");
+
+    // === TEST FORECAST FOR HOME ===
+    println!("\n=== TESTING FORECAST FOR HOME (should be set to Paris) ===");
+    
+    println!("\n--> User presses button: Forecast");
+    let forecast_home_callback = MockCallbackQuery::new()
+        .data("forecast_menu")
+        .message(start_message.clone());
+    bot.update(forecast_home_callback);
+    bot.dispatch().await;
+
+    let forecast_home_responses = bot.get_responses();
+    if let Some(message) = forecast_home_responses.sent_messages.last() {
+        println!("Forecast menu: {}", message.text().unwrap_or("(no text)"));
+    }
+
+    println!("\n--> User presses button: For home");
+    let forecast_for_home_callback = MockCallbackQuery::new()
+        .data("get_forecast_home")
+        .message(start_message.clone());
+    bot.update(forecast_for_home_callback);
+    bot.dispatch().await;
+
+    let forecast_for_home_responses = bot.get_responses();
+    if let Some(message) = forecast_for_home_responses.sent_messages.last() {
+        println!("Home forecast response: {}", message.text().unwrap_or("(no text)"));
+    }
 
     // === TEST INVALID CITY ===
     println!("\n=== TESTING WITH INVALID CITY ===");
     
-    println!("\n--> User presses button: Get Weather");
+    println!("\n--> User presses button: Current weather");
     let weather_callback3 = MockCallbackQuery::new()
-        .data("get_weather")
+        .data("current_weather_menu")
         .message(start_message.clone());
     bot.update(weather_callback3);
     bot.dispatch().await;
 
     let weather_responses3 = bot.get_responses();
     if let Some(message) = weather_responses3.sent_messages.last() {
-        println!("Button response: {}", message.text().unwrap_or("(no text)"));
+        println!("Current weather menu: {}", message.text().unwrap_or("(no text)"));
+    }
+
+    println!("\n--> User presses button: For any city");
+    let invalid_any_city_callback = MockCallbackQuery::new()
+        .data("get_weather_for")
+        .message(start_message.clone());
+    bot.update(invalid_any_city_callback);
+    bot.dispatch().await;
+
+    let invalid_any_city_responses = bot.get_responses();
+    if let Some(message) = invalid_any_city_responses.sent_messages.last() {
+        println!("Enter city prompt: {}", message.text().unwrap_or("(no text)"));
     }
 
     println!("\n--> User sends: InvalidCityName123");
@@ -99,8 +165,8 @@ async fn main() {
     // === TEST OTHER BUTTONS ===
     println!("\n=== TESTING OTHER BUTTONS ===");
     
-    // Test My Towns button
-    println!("\n--> User presses button: My Towns");
+    // Test Interested towns button
+    println!("\n--> User presses button: Interested towns");
     let callback2 = MockCallbackQuery::new()
         .data("my_towns")
         .message(start_message.clone());
@@ -109,7 +175,7 @@ async fn main() {
 
     let responses2 = bot.get_responses();
     if let Some(message) = responses2.sent_messages.last() {
-        println!("My Towns response: {}", message.text().unwrap_or("(no text)"));
+        println!("Interested towns response: {}", message.text().unwrap_or("(no text)"));
         print_buttons(message);
     }
     
@@ -140,11 +206,24 @@ async fn main() {
     }
     
     // Test viewing home weather
-    println!("\n--> User presses button: View Home Weather");
-    let view_home_callback = MockCallbackQuery::new()
-        .data("view_home_weather")
+    println!("\n--> User presses button: Current weather -> For home");
+    let current_weather_callback = MockCallbackQuery::new()
+        .data("current_weather_menu")
         .message(start_message.clone());
-    bot.update(view_home_callback);
+    bot.update(current_weather_callback);
+    bot.dispatch().await;
+
+    let current_weather_responses = bot.get_responses();
+    if let Some(message) = current_weather_responses.sent_messages.last() {
+        println!("Current weather menu: {}", message.text().unwrap_or("(no text)"));
+        print_buttons(message);
+    }
+
+    println!("\n--> User presses button: For home");
+    let for_home_callback = MockCallbackQuery::new()
+        .data("get_weather_home")
+        .message(start_message.clone());
+    bot.update(for_home_callback);
     bot.dispatch().await;
 
     let home_weather_responses = bot.get_responses();
@@ -191,8 +270,8 @@ async fn main() {
     // === TEST REMOVING INTERESTED TOWNS ===
     println!("\n=== TESTING REMOVING INTERESTED TOWNS ===");
     
-    // First, go back to My Towns
-    println!("\n--> User presses button: My Towns");
+    // First, go back to Interested towns
+    println!("\n--> User presses button: Interested towns");
     let my_towns_callback = MockCallbackQuery::new()
         .data("my_towns")
         .message(start_message.clone());
@@ -201,7 +280,7 @@ async fn main() {
 
     let my_towns_responses = bot.get_responses();
     if let Some(message) = my_towns_responses.sent_messages.last() {
-        println!("My Towns menu: {}", message.text().unwrap_or("(no text)"));
+        println!("Interested towns menu: {}", message.text().unwrap_or("(no text)"));
         print_buttons(message);
     }
     
@@ -327,30 +406,138 @@ async fn main() {
     }
 
     println!("\n--- All tests finished ---");
+
+    // === TEST DATA CLEANUP ON /START ===
+    println!("\n=== TESTING DATA CLEANUP ON /START ===");
+    
+    // First, verify user has some data (home town and interested towns)
+    println!("\n--> User presses button: Interested towns (should show Amsterdam as home and Sydney, New York as interested)");
+    let final_towns_callback = MockCallbackQuery::new()
+        .data("my_towns")
+        .message(start_message.clone());
+    bot.update(final_towns_callback);
+    bot.dispatch().await;
+
+    let final_towns_responses = bot.get_responses();
+    if let Some(message) = final_towns_responses.sent_messages.last() {
+        println!("Current user data: {}", message.text().unwrap_or("(no text)"));
+        print_buttons(message);
+    }
+
+    // NOW TEST /start CLEANUP
+    println!("\n--> User sends: /start (should clear all data)");
+    bot.update(MockMessageText::new().text("/start").from(alice.clone()));
+    bot.dispatch().await;
+
+    let cleanup_responses = bot.get_responses();
+    if let Some(message) = cleanup_responses.sent_messages.last() {
+        println!("Response after /start: {}", message.text().unwrap_or("(no text)"));
+        print_buttons(message);
+    }
+
+    // Verify data is actually cleared
+    println!("\n--> User presses button: Interested towns (should show no home town or interested towns)");
+    let empty_towns_callback = MockCallbackQuery::new()
+        .data("my_towns")
+        .message(start_message.clone());
+    bot.update(empty_towns_callback);
+    bot.dispatch().await;
+
+    let empty_towns_responses = bot.get_responses();
+    if let Some(message) = empty_towns_responses.sent_messages.last() {
+        println!("User data after /start cleanup: {}", message.text().unwrap_or("(no text)"));
+        print_buttons(message);
+    }
+
+    // Test home weather button after cleanup
+    println!("\n--> User presses button: Current weather -> For home (should ask to set home town)");
+    let cleanup_weather_callback = MockCallbackQuery::new()
+        .data("current_weather_menu")
+        .message(start_message.clone());
+    bot.update(cleanup_weather_callback);
+    bot.dispatch().await;
+
+    let cleanup_weather_responses = bot.get_responses();
+    if let Some(message) = cleanup_weather_responses.sent_messages.last() {
+        print_buttons(message);
+    }
+
+    println!("\n--> User presses button: For home");
+    let cleanup_home_callback = MockCallbackQuery::new()
+        .data("get_weather_home")
+        .message(start_message.clone());
+    bot.update(cleanup_home_callback);
+    bot.dispatch().await;
+
+    let cleanup_home_responses = bot.get_responses();
+    if let Some(message) = cleanup_home_responses.sent_messages.last() {
+        println!("Response when no home town set: {}", message.text().unwrap_or("(no text)"));
+    }
+
+    println!("\n=== DATA CLEANUP TEST COMPLETED ===");
+    println!("✅ /start command should clear all user data for fresh start");
+    
+    println!("\n--- All tests finished ---");
+    
+    // === CLEANUP TEST DATABASE FILES ===
+    println!("\n🧹 Cleaning up test database files...");
+    cleanup_test_databases();
+    println!("✅ Test cleanup completed");
 }
 
-/// Prints weather responses (current weather and forecast)
-fn print_weather_responses(responses: &teloxide_tests::Responses, city: &str) {
-    let total_messages = responses.sent_messages.len();
-    
+/// Clean up test database files after tests
+fn cleanup_test_databases() {
+    if let Ok(entries) = fs::read_dir(".") {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if let Some(name) = path.file_name() {
+                    if let Some(name_str) = name.to_str() {
+                        if name_str.starts_with("test_weather_bot_data_") {
+                            if path.is_dir() {
+                                if let Err(e) = fs::remove_dir_all(&path) {
+                                    println!("❌ Failed to remove {}: {}", name_str, e);
+                                } else {
+                                    println!("🗑️  Removed: {}", name_str);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Prints current weather response only
+fn print_current_weather_response(responses: &teloxide_tests::Responses, city: &str) {
     println!("Bot responses after receiving '{}':", city);
     
-    if total_messages >= 2 {
-        // Get the last two messages (current weather and forecast)
-        let current_weather_msg = &responses.sent_messages[total_messages - 2];
-        let forecast_msg = &responses.sent_messages[total_messages - 1];
-        
-        println!("\n--- Current Weather Response ---");
-        println!("{}", current_weather_msg.text().unwrap_or("(no text)"));
-        
-        println!("\n--- 7-Day Forecast Response ---");
-        println!("{}", forecast_msg.text().unwrap_or("(no text)"));
-    } else if total_messages >= 1 {
-        // Only one message (might be an error or partial response)
-        let last_msg = responses.sent_messages.last().unwrap();
-        println!("Response: {}", last_msg.text().unwrap_or("(no text)"));
-    } else {
-        println!("No responses received");
+    println!("\n--- Current Weather Response ---");
+    for (i, message) in responses.sent_messages.iter().enumerate() {
+        let text = message.text().unwrap_or("(no text)");
+        if text.contains("🌍") || text.contains("🌡️") || text.contains("☁️") || text.contains("💨") || text.contains("💧") {
+            println!("Weather data message:");
+            println!("{}", text);
+        } else if i == responses.sent_messages.len() - 1 {
+            println!("Final menu message: {}", text);
+        }
+    }
+}
+
+/// Prints forecast response only  
+fn print_forecast_response(responses: &teloxide_tests::Responses, city: &str) {
+    println!("Bot responses after receiving '{}':", city);
+    
+    println!("\n--- 3-Day Forecast Response ---");
+    for (i, message) in responses.sent_messages.iter().enumerate() {
+        let text = message.text().unwrap_or("(no text)");
+        if text.contains("📅") || text.contains("📆") || text.contains("🌡️") || text.contains("☁️") || text.contains("💨") || text.contains("💧") {
+            println!("Forecast data message:");
+            println!("{}", text);
+        } else if i == responses.sent_messages.len() - 1 {
+            println!("Final menu message: {}", text);
+        }
     }
 }
 

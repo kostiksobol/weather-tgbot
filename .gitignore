@@ -1,4 +1,8 @@
 /target
 
-# Environment variables (contains API keys)
 .env
+
+# Sled database files
+weather_bot_data/
+*.sled
+*.db

@@ -2,6 +2,7 @@ use reqwest;
 use serde::Deserialize;
 use std::env;
 use teloxide::utils::markdown;
+use urlencoding;
 
 #[derive(Debug, Deserialize)]
 pub struct CurrentWeather {
@@ -108,6 +109,9 @@ pub async fn get_forecast(city: &str, days: u8) -> Result<ForecastResponse, Box<
 }
 
 pub fn format_current_weather(weather: &CurrentWeather) -> String {
+    // Создаем URL-friendly версию названия города
+    let city_url = urlencoding::encode(&weather.location.name).to_string();
+    
     format!(
         "🌍 *{}*, {}, {}
 🌡️ *Temperature:* {}°C \\(feels like {}°C\\)
@@ -116,10 +120,11 @@ pub fn format_current_weather(weather: &CurrentWeather) -> String {
 💧 *Humidity:* {}%
 
 \\-\\-\\-
-Weather data provided by:
-• [WeatherAPI\\.com](https://weatherapi.com)
-• [OpenWeatherMap\\.org](https://openweathermap.org)
-• [WeatherBit\\.io](https://weatherbit.io)",
+🔗 *More weather info:*
+• [WeatherAPI\\.com](https://www.weatherapi.com/weather/q/{})
+• [Яндекс\\.Погода](https://yandex.ru/pogoda/search?text={})
+• [Google Weather](https://www.google.com/search?q=weather+{})
+• [OpenWeatherMap](https://openweathermap.org/find?q={})",
         markdown::escape(&weather.location.name),
         markdown::escape(&weather.location.region),
         markdown::escape(&weather.location.country),
@@ -128,13 +133,20 @@ Weather data provided by:
         markdown::escape(&weather.current.condition.text),
         markdown::escape(&weather.current.wind_speed.to_string()),
         markdown::escape(&weather.current.wind_direction),
-        weather.current.humidity
+        weather.current.humidity,
+        city_url,
+        city_url,
+        city_url,
+        city_url
     )
 }
 
 pub fn format_forecast(forecast: &ForecastResponse) -> String {
+    // Создаем URL-friendly версию названия города
+    let city_url = urlencoding::encode(&forecast.location.name).to_string();
+    
     let mut message = format!(
-        "📅 *7\\-Day Forecast for {}*, {}, {}\n\n",
+        "📅 *3\\-Day Forecast for {}*, {}, {}\n\n",
         markdown::escape(&forecast.location.name),
         markdown::escape(&forecast.location.region),
         markdown::escape(&forecast.location.country)
@@ -152,7 +164,10 @@ pub fn format_forecast(forecast: &ForecastResponse) -> String {
         ));
     }
 
-    message.push_str("\\-\\-\\-\nWeather data provided by:\n• [WeatherAPI\\.com](https://weatherapi.com)\n• [OpenWeatherMap\\.org](https://openweathermap.org)\n• [WeatherBit\\.io](https://weatherbit.io)");
+    message.push_str(&format!(
+        "\\-\\-\\-\n🔗 *More weather info:*\n• [WeatherAPI\\.com](https://www.weatherapi.com/weather/q/{})\n• [Яндекс\\.Погода](https://yandex.ru/pogoda/search?text={})\n• [Google Weather](https://www.google.com/search?q=weather+{})\n• [OpenWeatherMap](https://openweathermap.org/find?q={})",
+        city_url, city_url, city_url, city_url
+    ));
 
     message
 } 
