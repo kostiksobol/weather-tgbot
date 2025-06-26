@@ -17,18 +17,20 @@ pub struct WeatherAlert {
     pub city: String,
     pub alert_type: AlertType,
     pub is_active: bool,
+    pub hours_ahead: u8, // За сколько часов предупреждать (6, 12, 24, 48, 72)
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_triggered: Option<chrono::DateTime<chrono::Utc>>,
     pub description: String,
 }
 
 impl WeatherAlert {
-    pub fn new(id: String, city: String, alert_type: AlertType, description: String) -> Self {
+    pub fn new(id: String, city: String, alert_type: AlertType, description: String, hours_ahead: u8) -> Self {
         Self {
             id,
             city,
             alert_type,
             is_active: true,
+            hours_ahead,
             created_at: chrono::Utc::now(),
             last_triggered: None,
             description,
@@ -52,8 +54,10 @@ pub struct UserData {
     pub waiting_for_alert_wind_speed: bool,
     pub waiting_for_alert_humidity_min: bool,
     pub waiting_for_alert_humidity_max: bool,
+    pub waiting_for_alert_hours_input: bool,
     pub pending_alert_city: Option<String>,
     pub pending_alert_type: Option<AlertType>,
+    pub pending_alert_hours: Option<u8>,
 }
 
 impl Default for UserData {
@@ -73,8 +77,10 @@ impl Default for UserData {
             waiting_for_alert_wind_speed: false,
             waiting_for_alert_humidity_min: false,
             waiting_for_alert_humidity_max: false,
+            waiting_for_alert_hours_input: false,
             pending_alert_city: None,
             pending_alert_type: None,
+            pending_alert_hours: None,
         }
     }
 }

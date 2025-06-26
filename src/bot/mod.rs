@@ -290,8 +290,10 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.waiting_for_alert_wind_speed = false;
                         user_data.waiting_for_alert_humidity_min = false;
                         user_data.waiting_for_alert_humidity_max = false;
+                        user_data.waiting_for_alert_hours_input = false;
                         user_data.pending_alert_city = None;
                         user_data.pending_alert_type = None;
+                        user_data.pending_alert_hours = None;
                     });
                     
                     let keyboard = make_main_menu_keyboard(&state, chat_id);
@@ -446,7 +448,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                             // Send "typing" action while checking alert
                             bot.send_chat_action(chat_id, teloxide::types::ChatAction::Typing).await?;
                             
-                            match crate::alerts::AlertChecker::check_alert(alert).await {
+                            match crate::alerts::AlertChecker::check_current_alert(alert).await {
                                 Ok(is_triggered) => {
                                     match weather_api::get_current_weather(&alert.city).await {
                                         Ok(weather) => {
@@ -520,6 +522,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         bot.send_message(chat_id, "Weather Alerts Management:")
                             .reply_markup(keyboard)
                             .await?;
+
                     } else {
                     bot.send_message(chat_id, "Unknown button.")
                         .await?;
@@ -647,19 +650,13 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
             let user_data = get_user_data(&state, chat_id);
             match &user_data.pending_alert_type {
                 Some(AlertType::StandardWeatherAlert) => {
-                    let alert = create_standard_alert(text.to_string());
                     update_user_data(&state, chat_id, |user_data| {
-                        user_data.weather_alerts.push(alert);
-                        user_data.pending_alert_city = None;
-                        user_data.pending_alert_type = None;
+                        user_data.waiting_for_alert_hours_input = true;
                     });
                     
-                    bot.send_message(chat_id, format!("✅ Standard weather alert created for '{}'!", text))
-                        .await?;
-                    
-                    let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "Weather Alerts Management:")
-                        .reply_markup(keyboard)
+                    let cancel_keyboard = make_cancel_keyboard();
+                    bot.send_message(chat_id, format!("🕐 How many hours ahead should I warn you about weather in '{}'?\n\nEnter a number (1-72 hours):", text))
+                        .reply_markup(cancel_keyboard)
                         .await?;
                 }
                 Some(AlertType::TemperatureThreshold { .. }) => {
@@ -745,48 +742,35 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 }
             };
             
-            let user_data_clone = get_user_data(&state, chat_id);
-            if let (Some(city), Some(AlertType::TemperatureThreshold { min, .. })) = 
-                (&user_data_clone.pending_alert_city, &user_data_clone.pending_alert_type) {
-                let alert = create_temperature_alert(city.clone(), *min, max_temp);
-                update_user_data(&state, chat_id, |user_data| {
-                    user_data.weather_alerts.push(alert);
-                    user_data.waiting_for_alert_temperature_max = false;
-                    user_data.pending_alert_city = None;
-                    user_data.pending_alert_type = None;
-                });
-                
-                bot.send_message(chat_id, format!("✅ Temperature alert created for '{}'!", city))
-                    .await?;
-                
-                let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                bot.send_message(chat_id, "Weather Alerts Management:")
-                    .reply_markup(keyboard)
-                    .await?;
-            }
+            update_user_data(&state, chat_id, |user_data| {
+                user_data.waiting_for_alert_temperature_max = false;
+                user_data.waiting_for_alert_hours_input = true;
+                if let Some(AlertType::TemperatureThreshold { max, .. }) = &mut user_data.pending_alert_type {
+                    *max = max_temp;
+                }
+            });
+            
+            let cancel_keyboard = make_cancel_keyboard();
+            bot.send_message(chat_id, "🕐 How many hours ahead should I warn you about temperature changes?\n\nEnter a number (1-72 hours):")
+                .reply_markup(cancel_keyboard)
+                .await?;
         }
         // Handle wind speed alert
         else if user_data.waiting_for_alert_wind_speed {
             match text.parse::<f32>() {
                 Ok(wind_speed) => {
-                    let user_data_clone = get_user_data(&state, chat_id);
-                    if let Some(city) = &user_data_clone.pending_alert_city {
-                        let alert = create_wind_alert(city.clone(), wind_speed);
-                        update_user_data(&state, chat_id, |user_data| {
-                            user_data.weather_alerts.push(alert);
-                            user_data.waiting_for_alert_wind_speed = false;
-                            user_data.pending_alert_city = None;
-                            user_data.pending_alert_type = None;
-                        });
-                        
-                        bot.send_message(chat_id, format!("✅ Wind speed alert created for '{}'!", city))
-                            .await?;
-                        
-                        let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Weather Alerts Management:")
-                            .reply_markup(keyboard)
-                            .await?;
-                    }
+                    update_user_data(&state, chat_id, |user_data| {
+                        user_data.waiting_for_alert_wind_speed = false;
+                        user_data.waiting_for_alert_hours_input = true;
+                        if let Some(AlertType::WindSpeed { max }) = &mut user_data.pending_alert_type {
+                            *max = wind_speed;
+                        }
+                    });
+                    
+                    let cancel_keyboard = make_cancel_keyboard();
+                    bot.send_message(chat_id, "🕐 How many hours ahead should I warn you about wind conditions?\n\nEnter a number (1-72 hours):")
+                        .reply_markup(cancel_keyboard)
+                        .await?;
                 }
                 Err(_) => {
                     bot.send_message(chat_id, "Invalid wind speed value. Please enter a valid number:")
@@ -836,24 +820,60 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 }
             };
             
-            let user_data_clone = get_user_data(&state, chat_id);
-            if let (Some(city), Some(AlertType::Humidity { min, .. })) = 
-                (&user_data_clone.pending_alert_city, &user_data_clone.pending_alert_type) {
-                let alert = create_humidity_alert(city.clone(), *min, max_humidity);
-                update_user_data(&state, chat_id, |user_data| {
-                    user_data.weather_alerts.push(alert);
-                    user_data.waiting_for_alert_humidity_max = false;
-                    user_data.pending_alert_city = None;
-                    user_data.pending_alert_type = None;
-                });
-                
-                bot.send_message(chat_id, format!("✅ Humidity alert created for '{}'!", city))
-                    .await?;
-                
-                let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                bot.send_message(chat_id, "Weather Alerts Management:")
-                    .reply_markup(keyboard)
-                    .await?;
+            update_user_data(&state, chat_id, |user_data| {
+                user_data.waiting_for_alert_humidity_max = false;
+                user_data.waiting_for_alert_hours_input = true;
+                if let Some(AlertType::Humidity { max, .. }) = &mut user_data.pending_alert_type {
+                    *max = max_humidity;
+                }
+            });
+            
+            let cancel_keyboard = make_cancel_keyboard();
+            bot.send_message(chat_id, "🕐 How many hours ahead should I warn you about humidity changes?\n\nEnter a number (1-72 hours):")
+                .reply_markup(cancel_keyboard)
+                .await?;
+        }
+        // Handle hours input for alerts
+        else if user_data.waiting_for_alert_hours_input {
+            match text.parse::<u8>() {
+                Ok(hours) if hours >= 1 && hours <= 72 => {
+                    let user_data_clone = get_user_data(&state, chat_id);
+                    if let (Some(city), Some(alert_type)) = (&user_data_clone.pending_alert_city, &user_data_clone.pending_alert_type) {
+                        let alert = match alert_type {
+                            AlertType::StandardWeatherAlert => create_standard_alert(city.clone(), hours),
+                            AlertType::TemperatureThreshold { min, max } => create_temperature_alert(city.clone(), *min, *max, hours),
+                            AlertType::WindSpeed { max } => create_wind_alert(city.clone(), *max, hours),
+                            AlertType::Humidity { min, max } => create_humidity_alert(city.clone(), *min, *max, hours),
+                        };
+                        
+                        update_user_data(&state, chat_id, |user_data| {
+                            user_data.weather_alerts.push(alert);
+                            user_data.waiting_for_alert_hours_input = false;
+                            user_data.pending_alert_city = None;
+                            user_data.pending_alert_type = None;
+                            user_data.pending_alert_hours = None;
+                        });
+                        
+                        bot.send_message(chat_id, format!("✅ Weather alert created for '{}' with {} hours advance warning!", city, hours))
+                            .await?;
+                        
+                        let keyboard = make_alerts_menu_keyboard(&state, chat_id);
+                        bot.send_message(chat_id, "Weather Alerts Management:")
+                            .reply_markup(keyboard)
+                            .await?;
+                    } else {
+                        bot.send_message(chat_id, "Error: No pending alert data found.")
+                            .await?;
+                    }
+                }
+                Ok(_) => {
+                    bot.send_message(chat_id, "⚠️ Please enter a number between 1 and 72 hours:")
+                        .await?;
+                }
+                Err(_) => {
+                    bot.send_message(chat_id, "⚠️ Please enter a valid number:")
+                        .await?;
+                }
             }
         }
     }
@@ -1135,4 +1155,6 @@ pub fn make_remove_alerts_keyboard(state: &SharedState, chat_id: ChatId) -> Inli
     )]);
 
     InlineKeyboardMarkup::new(keyboard)
-} 
+}
+
+ 
