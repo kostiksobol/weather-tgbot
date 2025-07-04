@@ -7,7 +7,7 @@ use crate::{
     weather_api, 
     state::{SharedState, get_user_data, update_user_data, AlertType}, 
     alerts::{create_standard_alert, create_temperature_alert, create_wind_alert, create_humidity_alert},
-    i18n::{Language, t},
+    i18n::{Language, t, t_condition},
 };
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -34,7 +34,7 @@ pub async fn answer(bot: Bot, msg: Message, cmd: Command, state: SharedState) ->
             let user_data = get_user_data(&state, chat_id);
             if user_data.language == Language::default() && user_data.home_town.is_none() {
                 // First time user - show language selection
-                let keyboard = make_language_selection_keyboard();
+                let keyboard = make_language_selection_keyboard(&state, chat_id);
                 bot.send_message(chat_id, "Please select your language / Пожалуйста, выберите ваш язык:")
                     .reply_markup(keyboard)
                     .await?
@@ -96,7 +96,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         .await?;
                 }
                 "change_language" => {
-                    let keyboard = make_language_selection_keyboard();
+                    let keyboard = make_language_selection_keyboard(&state, chat_id);
                     bot.send_message(chat_id, t("language_selection", lang))
                         .reply_markup(keyboard)
                         .await?;
@@ -144,24 +144,26 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         
                         match weather_api::get_forecast(home_town, 3).await {
                             Ok(forecast) => {
-                                let forecast_message = weather_api::format_forecast(&forecast);
+                                let forecast_message = weather_api::format_forecast(&forecast, lang);
                                 bot.send_message(chat_id, forecast_message)
                                     .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                                     .await?;
                                 
                                 // Отправляем главное меню для удобства
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
-                                bot.send_message(chat_id, "Choose another option:")
+                                bot.send_message(chat_id, t("choose_another_option", lang))
                                     .reply_markup(keyboard)
                                     .await?;
                             }
                             Err(e) => {
-                                bot.send_message(chat_id, format!("Sorry, I couldn't get the forecast for your home town '{}'. Error: {}", home_town, e))
-                                    .await?;
+                                let error_msg = t("error_forecast_hometown", lang)
+                                    .replace("{}", home_town)
+                                    .replace("{}", &e.to_string());
+                                bot.send_message(chat_id, error_msg).await?;
                                 
                                 // Отправляем главное меню даже при ошибке
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
-                                bot.send_message(chat_id, "Choose another option:")
+                                bot.send_message(chat_id, t("choose_another_option", lang))
                                     .reply_markup(keyboard)
                                     .await?;
                             }
@@ -186,7 +188,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         
                         match weather_api::get_current_weather(home_town).await {
                             Ok(weather) => {
-                                let weather_message = weather_api::format_current_weather(&weather);
+                                let weather_message = weather_api::format_current_weather(&weather, lang);
                                 bot.send_message(chat_id, weather_message)
                                     .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                                     .await?;
@@ -198,9 +200,10 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                                     .await?;
                             }
                             Err(e) => {
-                                bot.send_message(chat_id, format!("{} '{}'. {}: {}", 
-                                    t("error_weather", lang), home_town, t("error", lang), e))
-                                    .await?;
+                                let error_msg = t("error_weather_hometown", lang)
+                                    .replace("{}", home_town)
+                                    .replace("{}", &e.to_string());
+                                bot.send_message(chat_id, error_msg).await?;
                                 
                                 // Отправляем главное меню даже при ошибке
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
@@ -272,24 +275,26 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         
                         match weather_api::get_current_weather(home_town).await {
                             Ok(weather) => {
-                                let weather_message = weather_api::format_current_weather(&weather);
+                                let weather_message = weather_api::format_current_weather(&weather, lang);
                                 bot.send_message(chat_id, weather_message)
                                     .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                                     .await?;
                                 
                                 // Отправляем главное меню
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
-                                bot.send_message(chat_id, "Choose another option:")
+                                bot.send_message(chat_id, t("choose_another_option", lang))
                                     .reply_markup(keyboard)
                                     .await?;
                             }
                             Err(e) => {
-                                bot.send_message(chat_id, format!("Sorry, I couldn't get the weather for your home town '{}'. Error: {}", home_town, e))
-                                    .await?;
+                                let error_msg = t("error_weather_hometown", lang)
+                                    .replace("{}", home_town)
+                                    .replace("{}", &e.to_string());
+                                bot.send_message(chat_id, error_msg).await?;
                                 
                                 // Отправляем главное меню даже при ошибке
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
-                                bot.send_message(chat_id, "Choose another option:")
+                                bot.send_message(chat_id, t("choose_another_option", lang))
                                     .reply_markup(keyboard)
                                     .await?;
                             }
@@ -429,7 +434,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         
                         match weather_api::get_current_weather(town_name).await {
                             Ok(weather) => {
-                                let weather_message = weather_api::format_current_weather(&weather);
+                                let weather_message = weather_api::format_current_weather(&weather, lang);
                                 bot.send_message(chat_id, weather_message)
                                     .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                                     .await?;
@@ -441,9 +446,10 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                                     .await?;
                             }
                             Err(e) => {
-                                bot.send_message(chat_id, format!("{} '{}'. {}: {}", 
-                                    t("error_weather", lang), town_name, t("error", lang), e))
-                                    .await?;
+                                let error_msg = t("error_weather_hometown", lang)
+                                    .replace("{}", town_name)
+                                    .replace("{}", &e.to_string());
+                                bot.send_message(chat_id, error_msg).await?;
                                 
                                 // Отправляем главное меню даже при ошибке
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
@@ -513,8 +519,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                                                     format!("{} ({})", t("temperature_alert_desc", lang), range)
                                                 },
                                                 AlertType::WindSpeed { max } => {
-                                                    let wind_desc = t("wind_speed_alert_desc", lang).replace("{}", &max.to_string());
-                                                    wind_desc
+                                                    t("wind_speed_alert_desc", lang).replacen("{}", &max.to_string(), 1)
                                                 },
                                                 AlertType::Humidity { min, max } => {
                                                     let range = match (min, max) {
@@ -526,21 +531,67 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                                                     format!("{} ({})", t("humidity_alert_desc", lang), range)
                                                 },
                                             };
+
+                                            let description = match &alert.alert_type {
+                                                AlertType::StandardWeatherAlert => t("alert_desc_standard", lang)
+                                                    .replacen("{}", &alert.city, 1)
+                                                    .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                AlertType::TemperatureThreshold { min, max } => match (min, max) {
+                                                    (Some(min_val), Some(max_val)) => t("alert_desc_temp_range", lang)
+                                                        .replacen("{}", &min_val.to_string(), 1)
+                                                        .replacen("{}", &max_val.to_string(), 1)
+                                                        .replacen("{}", &alert.city, 1)
+                                                        .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                    (Some(min_val), None) => t("alert_desc_temp_min", lang)
+                                                        .replacen("{}", &min_val.to_string(), 1)
+                                                        .replacen("{}", &alert.city, 1)
+                                                        .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                    (None, Some(max_val)) => t("alert_desc_temp_max", lang)
+                                                        .replacen("{}", &max_val.to_string(), 1)
+                                                        .replacen("{}", &alert.city, 1)
+                                                        .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                    (None, None) => t("alert_desc_temp_none", lang)
+                                                        .replacen("{}", &alert.city, 1)
+                                                        .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                },
+                                                AlertType::WindSpeed { max } => t("alert_desc_wind", lang)
+                                                    .replacen("{}", &max.to_string(), 1)
+                                                    .replacen("{}", &alert.city, 1)
+                                                    .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                AlertType::Humidity { min, max } => match (min, max) {
+                                                    (Some(min_val), Some(max_val)) => t("alert_desc_humidity_range", lang)
+                                                        .replacen("{}", &min_val.to_string(), 1)
+                                                        .replacen("{}", &max_val.to_string(), 1)
+                                                        .replacen("{}", &alert.city, 1)
+                                                        .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                    (Some(min_val), None) => t("alert_desc_humidity_min", lang)
+                                                        .replacen("{}", &min_val.to_string(), 1)
+                                                        .replacen("{}", &alert.city, 1)
+                                                        .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                    (None, Some(max_val)) => t("alert_desc_humidity_max", lang)
+                                                        .replacen("{}", &max_val.to_string(), 1)
+                                                        .replacen("{}", &alert.city, 1)
+                                                        .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                    (None, None) => t("alert_desc_humidity_none", lang)
+                                                        .replacen("{}", &alert.city, 1)
+                                                        .replacen("{}", &alert.hours_ahead.to_string(), 1),
+                                                },
+                                            };
                                             
                                             let message = format!(
-                                                "{} <b>{}</b>\n\n{}\n\n📍 <b>{}:</b> {}\n📝 <b>{}:</b> {}\n\n<b>{}:</b>\n🌡️ {}: {}°C\n☁️ {}: {}\n💨 {}: {} {}\n💧 {}: {}%\n\n⏰ {}: {}\n{}",
+                                                "{} <b>{}</b>\n\n{}\n\n📍 <b>{}:</b> {}\n📝 <b>{}:</b> {}\n\n<b>{}:</b>\n🌡️ <b>{}:</b> {}°C\n☁️ <b>{}:</b> {}\n💨 <b>{}:</b> {} {}\n💧 <b>{}:</b> {}%\n\n⏰ <b>{}:</b> {}\n{}",
                                                 status_emoji,
                                                 status_text,
                                                 alert_type_str,
                                                 t("city", lang),
                                                 weather.location.name,
                                                 t("description", lang),
-                                                alert.description,
+                                                description,
                                                 t("current_weather", lang),
                                                 t("temperature", lang),
                                                 weather.current.temperature,
                                                 t("condition", lang),
-                                                weather.current.condition.text,
+                                                t_condition(&weather.current.condition.text, lang),
                                                 t("wind", lang),
                                                 weather.current.wind_speed,
                                                 t("kmh", lang),
@@ -549,9 +600,9 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                                                 t("created", lang),
                                                 alert.created_at.format("%Y-%m-%d %H:%M"),
                                                 if let Some(last_triggered) = alert.last_triggered {
-                                                    format!("🔔 {}: {}", t("last_triggered", lang), last_triggered.format("%Y-%m-%d %H:%M"))
+                                                    format!("🔔 <b>{}:</b> {}", t("last_triggered", lang), last_triggered.format("%Y-%m-%d %H:%M"))
                                                 } else {
-                                                    format!("🔔 {}", t("never_triggered", lang))
+                                                    format!("🔔 <b>{}</b>", t("never_triggered", lang))
                                                 }
                                             );
                                             
@@ -579,13 +630,12 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                             bot.send_message(chat_id, t("alert_not_found", lang))
                                 .await?;
                         }
-                            
+                        
                         // Возвращаемся в alerts меню
                         let keyboard = make_alerts_menu_keyboard(&state, chat_id);
                         bot.send_message(chat_id, t("alerts_management", lang))
                             .reply_markup(keyboard)
                             .await?;
-
                     } else {
                         bot.send_message(chat_id, t("unknown_button", lang))
                             .await?;
@@ -661,7 +711,7 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
             // Fetch ONLY current weather
             match weather_api::get_current_weather(text).await {
                 Ok(weather) => {
-                    let weather_message = weather_api::format_current_weather(&weather);
+                    let weather_message = weather_api::format_current_weather(&weather, lang);
                     bot.send_message(chat_id, weather_message)
                         .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                         .await?;
@@ -694,7 +744,7 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
             // Fetch 3-day forecast  
             match weather_api::get_forecast(text, 3).await {
                 Ok(forecast) => {
-                    let forecast_message = weather_api::format_forecast(&forecast);
+                    let forecast_message = weather_api::format_forecast(&forecast, lang);
                     bot.send_message(chat_id, forecast_message)
                         .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                         .await?;
@@ -955,6 +1005,23 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
     }
     
     Ok(())
+}
+
+pub fn make_settings_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
+    let mut keyboard = vec![];
+    
+    keyboard.push(vec![InlineKeyboardButton::callback(
+        t("change_language", lang),
+        "change_language",
+    )]);
+    
+    keyboard.push(vec![InlineKeyboardButton::callback(
+        t("back_to_main", lang),
+        "back_to_main",
+    )]);
+
+    InlineKeyboardMarkup::new(keyboard)
 }
 
 pub fn make_main_menu_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
@@ -1257,7 +1324,8 @@ pub fn make_remove_alerts_keyboard(state: &SharedState, chat_id: ChatId) -> Inli
     InlineKeyboardMarkup::new(keyboard)
 }
 
-pub fn make_language_selection_keyboard() -> InlineKeyboardMarkup {
+pub fn make_language_selection_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
     
     keyboard.push(vec![InlineKeyboardButton::callback(
@@ -1268,23 +1336,6 @@ pub fn make_language_selection_keyboard() -> InlineKeyboardMarkup {
     keyboard.push(vec![InlineKeyboardButton::callback(
         "🇷🇺 Русский",
         "language_ru",
-    )]);
-    
-    keyboard.push(vec![InlineKeyboardButton::callback(
-        "← Back to Main Menu",
-        "back_to_main",
-    )]);
-
-    InlineKeyboardMarkup::new(keyboard)
-}
-
-pub fn make_settings_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
-    let lang = get_user_data(state, chat_id).language;
-    let mut keyboard = vec![];
-    
-    keyboard.push(vec![InlineKeyboardButton::callback(
-        t("change_language", lang),
-        "change_language",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(

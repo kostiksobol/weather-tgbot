@@ -1,9 +1,9 @@
 use std::time::Duration;
 use tokio::time::interval;
 use teloxide::{Bot, prelude::Requester};
-use crate::state::{SharedState, update_user_data};
-use crate::alerts::AlertChecker;
+use crate::state::SharedState;
 use crate::weather_api::get_current_weather;
+use crate::alerts::AlertChecker;
 
 pub struct AlertScheduler {
     bot: Bot,
@@ -49,37 +49,24 @@ impl AlertScheduler {
                     }
                 }
                 
-                match AlertChecker::check_alert(alert).await {
-                    Ok(true) => {
-                        log::info!("Alert triggered for user {} in city {}", chat_id, alert.city);
+                if AlertChecker::check_forecast_alert(alert).await.unwrap_or(false) {
+                    if let Ok(_weather) = get_current_weather(&alert.city).await {
+                        // Локализация здесь затруднена, т.к. нет прямого доступа к языку пользователя.
+                        // Отправляем простое уведомление. Пользователь может проверить детали в боте.
+                        let message = format!(
+                            "⚠️ WEATHER ALERT in {}! ⚠️\nCheck the bot for more details.",
+                            alert.city
+                        );
                         
-                        // Получаем погодные данные для уведомления
-                        match get_current_weather(&alert.city).await {
-                            Ok(weather) => {
-                                let message = AlertChecker::format_alert_message(alert, &weather);
-                                
-                                if let Err(e) = self.bot.send_message(chat_id, message).await {
-                                    log::error!("Failed to send alert to user {}: {}", chat_id, e);
-                                } else {
-                                    // Обновляем время последнего срабатывания
-                                    update_user_data(&self.state, chat_id, |user_data| {
-                                        if let Some(alert_to_update) = user_data.weather_alerts.iter_mut()
-                                            .find(|a| a.id == alert.id) {
-                                            alert_to_update.last_triggered = Some(chrono::Utc::now());
-                                        }
-                                    });
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Failed to fetch weather data for alert in {}: {}", alert.city, e);
-                            }
+                        if let Err(e) = self.bot.send_message(chat_id, message).await {
+                            log::error!("Failed to send alert to {}: {}", chat_id, e);
                         }
-                    }
-                    Ok(false) => {
-                        // Алерт не сработал, это нормально
-                    }
-                    Err(e) => {
-                        log::error!("Error checking alert for {} in {}: {}", chat_id, alert.city, e);
+                        
+                        // Обновляем время последнего срабатывания
+                        self.state.data.lock().unwrap()
+                            .get_mut(&chat_id)
+                            .and_then(|user_data| user_data.weather_alerts.iter_mut().find(|a| a.id == alert.id))
+                            .map(|a| a.last_triggered = Some(chrono::Utc::now()));
                     }
                 }
                 

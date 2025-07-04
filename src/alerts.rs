@@ -152,28 +152,6 @@ impl AlertChecker {
         
         Ok(extreme_weather || extreme_temperature || extreme_wind)
     }
-    
-    pub fn format_alert_message(alert: &WeatherAlert, weather: &CurrentWeather) -> String {
-        let alert_type_str = match &alert.alert_type {
-            AlertType::StandardWeatherAlert => "🚨 Экстремальные погодные условия",
-            AlertType::TemperatureThreshold { .. } => "🌡️ Превышение температурного порога",
-            AlertType::WindSpeed { .. } => "💨 Сильный ветер",
-            AlertType::Humidity { .. } => "💧 Критический уровень влажности",
-        };
-        
-        format!(
-            "⚠️ WEATHER ALERT ⚠️\n\n{}\n\n🏠 Город: {}\n📝 Описание: {}\n⏰ Предупреждение за: {} часов\n\n🌡️ Текущая температура: {}°C\n☁️ Условия: {}\n💨 Ветер: {} км/ч\n💧 Влажность: {}%\n\n🕐 Время срабатывания: {}",
-            alert_type_str,
-            weather.location.name,
-            alert.description,
-            alert.hours_ahead,
-            weather.current.temperature,
-            weather.current.condition.text,
-            weather.current.wind_speed,
-            weather.current.humidity,
-            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
-        )
-    }
 }
 
 pub fn generate_alert_id() -> String {
@@ -183,26 +161,17 @@ pub fn generate_alert_id() -> String {
 pub fn create_standard_alert(city: String, hours_ahead: u8) -> WeatherAlert {
     WeatherAlert::new(
         generate_alert_id(),
-        city.clone(),
+        city,
         AlertType::StandardWeatherAlert,
-        format!("Стандартные предупреждения о погоде для {} (за {} ч.)", city, hours_ahead),
         hours_ahead
     )
 }
 
 pub fn create_temperature_alert(city: String, min: Option<f32>, max: Option<f32>, hours_ahead: u8) -> WeatherAlert {
-    let description = match (min, max) {
-        (Some(min_val), Some(max_val)) => format!("Температура вне диапазона {}°C - {}°C в {} (за {} ч.)", min_val, max_val, city, hours_ahead),
-        (Some(min_val), None) => format!("Температура ниже {}°C в {} (за {} ч.)", min_val, city, hours_ahead),
-        (None, Some(max_val)) => format!("Температура выше {}°C в {} (за {} ч.)", max_val, city, hours_ahead),
-        (None, None) => format!("Контроль температуры в {} (за {} ч.)", city, hours_ahead),
-    };
-    
     WeatherAlert::new(
         generate_alert_id(),
         city,
         AlertType::TemperatureThreshold { min, max },
-        description,
         hours_ahead
     )
 }
@@ -210,26 +179,17 @@ pub fn create_temperature_alert(city: String, min: Option<f32>, max: Option<f32>
 pub fn create_wind_alert(city: String, max_speed: f32, hours_ahead: u8) -> WeatherAlert {
     WeatherAlert::new(
         generate_alert_id(),
-        city.clone(),
+        city,
         AlertType::WindSpeed { max: max_speed },
-        format!("Скорость ветра выше {} км/ч в {} (за {} ч.)", max_speed, city, hours_ahead),
         hours_ahead
     )
 }
 
 pub fn create_humidity_alert(city: String, min: Option<u32>, max: Option<u32>, hours_ahead: u8) -> WeatherAlert {
-    let description = match (min, max) {
-        (Some(min_val), Some(max_val)) => format!("Влажность вне диапазона {}% - {}% в {} (за {} ч.)", min_val, max_val, city, hours_ahead),
-        (Some(min_val), None) => format!("Влажность ниже {}% в {} (за {} ч.)", min_val, city, hours_ahead),
-        (None, Some(max_val)) => format!("Влажность выше {}% в {} (за {} ч.)", max_val, city, hours_ahead),
-        (None, None) => format!("Контроль влажности в {} (за {} ч.)", city, hours_ahead),
-    };
-    
     WeatherAlert::new(
         generate_alert_id(),
         city,
         AlertType::Humidity { min, max },
-        description,
         hours_ahead
     )
 } 

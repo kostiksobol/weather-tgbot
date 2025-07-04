@@ -3,6 +3,7 @@ use serde::Deserialize;
 use std::env;
 use teloxide::utils::markdown;
 use urlencoding;
+use crate::i18n::{Language, t, t_condition};
 
 #[derive(Debug, Deserialize)]
 pub struct CurrentWeather {
@@ -108,19 +109,19 @@ pub async fn get_forecast(city: &str, days: u8) -> Result<ForecastResponse, Box<
     Ok(forecast)
 }
 
-pub fn format_current_weather(weather: &CurrentWeather) -> String {
+pub fn format_current_weather(weather: &CurrentWeather, lang: Language) -> String {
     // Создаем URL-friendly версию названия города
     let city_url = urlencoding::encode(&weather.location.name).to_string();
     
     format!(
         "🌍 *{}*, {}, {}
-🌡️ *Temperature:* {}°C \\(feels like {}°C\\)
-☁️ *Condition:* {}
-💨 *Wind:* {} km/h {}
-💧 *Humidity:* {}%
+🌡️ *{}:* {}°C \\({} {}°C\\)
+☁️ *{}:* {}
+💨 *{}:* {} km/h {}
+💧 *{}:* {}%
 
 \\-\\-\\-
-🔗 *More weather info:*
+🔗 *{}:*
 • [WeatherAPI\\.com](https://www.weatherapi.com/weather/q/{})
 • [Яндекс\\.Погода](https://yandex.ru/pogoda/search?text={})
 • [Google Weather](https://www.google.com/search?q=weather+{})
@@ -128,12 +129,18 @@ pub fn format_current_weather(weather: &CurrentWeather) -> String {
         markdown::escape(&weather.location.name),
         markdown::escape(&weather.location.region),
         markdown::escape(&weather.location.country),
+        t("temperature_label", lang),
         markdown::escape(&weather.current.temperature.to_string()),
+        t("feels_like_label", lang),
         markdown::escape(&weather.current.feels_like.to_string()),
-        markdown::escape(&weather.current.condition.text),
+        t("condition_label", lang),
+        markdown::escape(t_condition(&weather.current.condition.text, lang)),
+        t("wind_label", lang),
         markdown::escape(&weather.current.wind_speed.to_string()),
         markdown::escape(&weather.current.wind_direction),
+        t("humidity_label", lang),
         weather.current.humidity,
+        t("more_info_label", lang),
         city_url,
         city_url,
         city_url,
@@ -141,12 +148,13 @@ pub fn format_current_weather(weather: &CurrentWeather) -> String {
     )
 }
 
-pub fn format_forecast(forecast: &ForecastResponse) -> String {
+pub fn format_forecast(forecast: &ForecastResponse, lang: Language) -> String {
     // Создаем URL-friendly версию названия города
     let city_url = urlencoding::encode(&forecast.location.name).to_string();
     
     let mut message = format!(
-        "📅 *3\\-Day Forecast for {}*, {}, {}\n\n",
+        "📅 *{} {}*, {}, {}\n\n",
+        t("forecast_title", lang),
         markdown::escape(&forecast.location.name),
         markdown::escape(&forecast.location.region),
         markdown::escape(&forecast.location.country)
@@ -158,14 +166,15 @@ pub fn format_forecast(forecast: &ForecastResponse) -> String {
             markdown::escape(&day.date),
             markdown::escape(&day.day.min_temp.to_string()),
             markdown::escape(&day.day.max_temp.to_string()),
-            markdown::escape(&day.day.condition.text),
+            markdown::escape(t_condition(&day.day.condition.text, lang)),
             markdown::escape(&day.day.avg_humidity.to_string()),
             markdown::escape(&day.day.max_wind.to_string())
         ));
     }
 
     message.push_str(&format!(
-        "\\-\\-\\-\n🔗 *More weather info:*\n• [WeatherAPI\\.com](https://www.weatherapi.com/weather/q/{})\n• [Яндекс\\.Погода](https://yandex.ru/pogoda/search?text={})\n• [Google Weather](https://www.google.com/search?q=weather+{})\n• [OpenWeatherMap](https://openweathermap.org/find?q={})",
+        "\\-\\-\\-\n🔗 *{}:*\n• [WeatherAPI\\.com](https://www.weatherapi.com/weather/q/{})\n• [Яндекс\\.Погода](https://yandex.ru/pogoda/search?text={})\n• [Google Weather](https://www.google.com/search?q=weather+{})\n• [OpenWeatherMap](https://openweathermap.org/find?q={})",
+        t("more_info_label", lang),
         city_url, city_url, city_url, city_url
     ));
 

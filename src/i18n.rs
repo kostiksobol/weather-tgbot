@@ -391,6 +391,52 @@ impl Translations {
         
         translations.insert(("kmh", Language::English), "km/h");
         translations.insert(("kmh", Language::Russian), "км/ч");
+        
+        translations.insert(("error_forecast_hometown", Language::English), "Sorry, I couldn't get the forecast for your home town '{}'. Error: {}");
+        translations.insert(("error_forecast_hometown", Language::Russian), "Извините, не удалось получить прогноз для вашего родного города '{}'. Ошибка: {}");
+        
+        translations.insert(("error_weather_hometown", Language::English), "Sorry, I couldn't get the weather for your home town '{}'. Error: {}");
+        translations.insert(("error_weather_hometown", Language::Russian), "Извините, не удалось получить погоду для вашего родного города '{}'. Ошибка: {}");
+
+        // format_current_weather
+        translations.insert(("temperature_label", Language::English), "Temperature:");
+        translations.insert(("temperature_label", Language::Russian), "Температура:");
+        translations.insert(("feels_like_label", Language::English), "feels like");
+        translations.insert(("feels_like_label", Language::Russian), "ощущается как");
+        translations.insert(("condition_label", Language::English), "Condition:");
+        translations.insert(("condition_label", Language::Russian), "Состояние:");
+        translations.insert(("wind_label", Language::English), "Wind:");
+        translations.insert(("wind_label", Language::Russian), "Ветер:");
+        translations.insert(("humidity_label", Language::English), "Humidity:");
+        translations.insert(("humidity_label", Language::Russian), "Влажность:");
+        translations.insert(("more_info_label", Language::English), "More weather info:");
+        translations.insert(("more_info_label", Language::Russian), "Больше информации о погоде:");
+
+        // format_forecast
+        translations.insert(("forecast_title", Language::English), "3-Day Forecast for");
+        translations.insert(("forecast_title", Language::Russian), "Прогноз на 3 дня для");
+
+        // Alert Descriptions
+        translations.insert(("alert_desc_standard", Language::English), "Standard weather warnings for {} (for {} hours)");
+        translations.insert(("alert_desc_standard", Language::Russian), "Стандартные предупреждения о погоде для {} (за {} ч.)");
+        translations.insert(("alert_desc_temp_range", Language::English), "Temperature outside the range {}°C - {}°C in {} (for {} hours)");
+        translations.insert(("alert_desc_temp_range", Language::Russian), "Температура вне диапазона {}°C - {}°C в {} (за {} ч.)");
+        translations.insert(("alert_desc_temp_min", Language::English), "Temperature below {}°C in {} (for {} hours)");
+        translations.insert(("alert_desc_temp_min", Language::Russian), "Температура ниже {}°C в {} (за {} ч.)");
+        translations.insert(("alert_desc_temp_max", Language::English), "Temperature above {}°C in {} (for {} hours)");
+        translations.insert(("alert_desc_temp_max", Language::Russian), "Температура выше {}°C в {} (за {} ч.)");
+        translations.insert(("alert_desc_temp_none", Language::English), "Temperature monitoring in {} (for {} hours)");
+        translations.insert(("alert_desc_temp_none", Language::Russian), "Контроль температуры в {} (за {} ч.)");
+        translations.insert(("alert_desc_wind", Language::English), "Wind speed above {} km/h in {} (for {} hours)");
+        translations.insert(("alert_desc_wind", Language::Russian), "Скорость ветра выше {} км/ч в {} (за {} ч.)");
+        translations.insert(("alert_desc_humidity_range", Language::English), "Humidity outside the range {}% - {}% in {} (for {} hours)");
+        translations.insert(("alert_desc_humidity_range", Language::Russian), "Влажность вне диапазона {}% - {}% в {} (за {} ч.)");
+        translations.insert(("alert_desc_humidity_min", Language::English), "Humidity below {}% in {} (for {} hours)");
+        translations.insert(("alert_desc_humidity_min", Language::Russian), "Влажность ниже {}% в {} (за {} ч.)");
+        translations.insert(("alert_desc_humidity_max", Language::English), "Humidity above {}% in {} (for {} hours)");
+        translations.insert(("alert_desc_humidity_max", Language::Russian), "Влажность выше {}% в {} (за {} ч.)");
+        translations.insert(("alert_desc_humidity_none", Language::English), "Humidity monitoring in {} (for {} hours)");
+        translations.insert(("alert_desc_humidity_none", Language::Russian), "Контроль влажности в {} (за {} ч.)");
 
         Self { translations }
     }
@@ -413,4 +459,63 @@ pub static TRANSLATIONS: Lazy<Translations> = Lazy::new(Translations::new);
 
 pub fn t(key: &str, lang: Language) -> &'static str {
     TRANSLATIONS.get(key, lang)
+}
+
+pub fn t_condition(condition: &str, lang: Language) -> &str {
+    match lang {
+        Language::Russian => match condition.to_lowercase().as_str() {
+            "sunny" => "Солнечно",
+            "clear" => "Ясно",
+            "partly cloudy" => "Переменная облачность",
+            "cloudy" => "Облачно",
+            "overcast" => "Пасмурно",
+            "mist" => "Туман",
+            "patchy rain possible" => "Возможен небольшой дождь",
+            "patchy rain nearby" => "Местами небольшой дождь",
+            "patchy snow possible" => "Возможен небольшой снег",
+            "patchy sleet possible" => "Возможен небольшой мокрый снег",
+            "patchy freezing drizzle possible" => "Возможна небольшая изморозь",
+            "thundery outbreaks possible" => "Возможны грозы",
+            "blowing snow" => "Метель",
+            "blizzard" => "Буран",
+            "fog" => "Туман",
+            "freezing fog" => "Ледяной туман",
+            "patchy light drizzle" => "Местами слабая морось",
+            "light drizzle" => "Слабая морось",
+            "freezing drizzle" => "Изморозь",
+            "heavy freezing drizzle" => "Сильная изморозь",
+            "patchy light rain" => "Местами небольшой дождь",
+            "light rain" => "Небольшой дождь",
+            "moderate rain at times" => "Временами умеренный дождь",
+            "moderate rain" => "Умеренный дождь",
+            "heavy rain at times" => "Временами сильный дождь",
+            "heavy rain" => "Сильный дождь",
+            "light freezing rain" => "Слабый ледяной дождь",
+            "moderate or heavy freezing rain" => "Умеренный или сильный ледяной дождь",
+            "light sleet" => "Слабый мокрый снег",
+            "moderate or heavy sleet" => "Умеренный или сильный мокрый снег",
+            "patchy light snow" => "Местами небольшой снег",
+            "light snow" => "Небольшой снег",
+            "patchy moderate snow" => "Местами умеренный снег",
+            "moderate snow" => "Умеренный снег",
+            "patchy heavy snow" => "Местами сильный снег",
+            "heavy snow" => "Сильный снег",
+            "ice pellets" => "Ледяная крупа",
+            "light rain shower" => "Небольшой ливень",
+            "moderate or heavy rain shower" => "Умеренный или сильный ливень",
+            "torrential rain shower" => "Проливной ливень",
+            "light sleet showers" => "Небольшой ливень с мокрым снегом",
+            "moderate or heavy sleet showers" => "Умеренный или сильный ливень с мокрым снегом",
+            "light snow showers" => "Небольшой снегопад",
+            "moderate or heavy snow showers" => "Умеренный или сильный снегопад",
+            "light showers of ice pellets" => "Небольшой ливень с ледяной крупой",
+            "moderate or heavy showers of ice pellets" => "Умеренный или сильный ливень с ледяной крупой",
+            "patchy light rain with thunder" => "Местами небольшой дождь с грозой",
+            "moderate or heavy rain with thunder" => "Умеренный или сильный дождь с грозой",
+            "patchy light snow with thunder" => "Местами небольшой снег с грозой",
+            "moderate or heavy snow with thunder" => "Умеренный или сильный снег с грозой",
+            _ => condition,
+        },
+        Language::English => condition,
+    }
 } 

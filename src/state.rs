@@ -21,11 +21,10 @@ pub struct WeatherAlert {
     pub hours_ahead: u8, // За сколько часов предупреждать (6, 12, 24, 48, 72)
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_triggered: Option<chrono::DateTime<chrono::Utc>>,
-    pub description: String,
 }
 
 impl WeatherAlert {
-    pub fn new(id: String, city: String, alert_type: AlertType, description: String, hours_ahead: u8) -> Self {
+    pub fn new(id: String, city: String, alert_type: AlertType, hours_ahead: u8) -> Self {
         Self {
             id,
             city,
@@ -34,7 +33,6 @@ impl WeatherAlert {
             hours_ahead,
             created_at: chrono::Utc::now(),
             last_triggered: None,
-            description,
         }
     }
 }
