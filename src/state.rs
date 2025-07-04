@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use teloxide::types::ChatId;
 use crate::storage::Storage;
+use crate::i18n::Language;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum AlertType {
@@ -40,6 +41,7 @@ impl WeatherAlert {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UserData {
+    pub language: Language,
     pub home_town: Option<String>,
     pub interested_towns: Vec<String>,
     pub weather_alerts: Vec<WeatherAlert>,
@@ -63,6 +65,7 @@ pub struct UserData {
 impl Default for UserData {
     fn default() -> Self {
         Self {
+            language: Language::default(),
             home_town: None,
             interested_towns: Vec::new(),
             weather_alerts: Vec::new(),

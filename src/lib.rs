@@ -4,6 +4,7 @@ pub mod state;
 pub mod storage;
 pub mod alerts;
 pub mod scheduler;
+pub mod i18n;
 
 use teloxide::{
     dispatching::{UpdateFilterExt, UpdateHandler},

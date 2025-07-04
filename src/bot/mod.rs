@@ -6,7 +6,8 @@ use teloxide::{
 use crate::{
     weather_api, 
     state::{SharedState, get_user_data, update_user_data, AlertType}, 
-    alerts::{create_standard_alert, create_temperature_alert, create_wind_alert, create_humidity_alert}
+    alerts::{create_standard_alert, create_temperature_alert, create_wind_alert, create_humidity_alert},
+    i18n::{Language, t},
 };
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -29,21 +30,22 @@ pub async fn answer(bot: Bot, msg: Message, cmd: Command, state: SharedState) ->
                 .await?
         }
         Command::Start => {
-            // Reset user state when starting - полная очистка данных пользователя
-            update_user_data(&state, chat_id, |user_data| {
-                user_data.waiting_for_city = false;
-                user_data.waiting_for_home_town = false;
-                user_data.waiting_for_interested_town = false;
-                user_data.removing_interested_town = false;
-                // Очищаем сохраненные города для чистого старта
-                user_data.home_town = None;
-                user_data.interested_towns.clear();
-            });
-            
-            let keyboard = make_main_menu_keyboard(&state, chat_id);
-            bot.send_message(chat_id, "Welcome! Please choose an option:")
-                .reply_markup(keyboard)
-                .await?
+            // Check if user already has a language set
+            let user_data = get_user_data(&state, chat_id);
+            if user_data.language == Language::default() && user_data.home_town.is_none() {
+                // First time user - show language selection
+                let keyboard = make_language_selection_keyboard();
+                bot.send_message(chat_id, "Please select your language / Пожалуйста, выберите ваш язык:")
+                    .reply_markup(keyboard)
+                    .await?
+            } else {
+                // Returning user - show main menu
+                let lang = user_data.language;
+                let keyboard = make_main_menu_keyboard(&state, chat_id);
+                bot.send_message(chat_id, t("welcome", lang))
+                    .reply_markup(keyboard)
+                    .await?
+            }
         }
     };
 
@@ -58,17 +60,56 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
     if let Some(data) = q.data {
         if let Some(message) = q.message {
             let chat_id = message.chat().id;
+            let lang = get_user_data(&state, chat_id).language;
             
             match data.as_str() {
+                "language_en" => {
+                    update_user_data(&state, chat_id, |user_data| {
+                        user_data.language = Language::English;
+                    });
+                    
+                    bot.send_message(chat_id, t("language_changed", Language::English))
+                        .await?;
+                    
+                    let keyboard = make_main_menu_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("welcome", Language::English))
+                        .reply_markup(keyboard)
+                        .await?;
+                }
+                "language_ru" => {
+                    update_user_data(&state, chat_id, |user_data| {
+                        user_data.language = Language::Russian;
+                    });
+                    
+                    bot.send_message(chat_id, t("language_changed", Language::Russian))
+                        .await?;
+                    
+                    let keyboard = make_main_menu_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("welcome", Language::Russian))
+                        .reply_markup(keyboard)
+                        .await?;
+                }
+                "settings_menu" => {
+                    let keyboard = make_settings_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("settings_menu", lang))
+                        .reply_markup(keyboard)
+                        .await?;
+                }
+                "change_language" => {
+                    let keyboard = make_language_selection_keyboard();
+                    bot.send_message(chat_id, t("language_selection", lang))
+                        .reply_markup(keyboard)
+                        .await?;
+                }
                 "current_weather_menu" => {
                     let keyboard = make_current_weather_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "Choose current weather option:")
+                    bot.send_message(chat_id, t("choose_weather_option", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
                 "forecast_menu" => {
                     let keyboard = make_forecast_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "Choose forecast option:")
+                    bot.send_message(chat_id, t("choose_forecast_option", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
@@ -79,8 +120,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.waiting_for_city = true;
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Please enter the name of the city you want to get current weather for:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_city_weather", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -90,8 +131,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.waiting_for_forecast_city = true;
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Please enter the name of the city you want to get forecast for:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_city_forecast", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -131,8 +172,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                             user_data.waiting_for_home_town = true;
                         });
                         
-                        let cancel_keyboard = make_cancel_keyboard();
-                        bot.send_message(chat_id, "You haven't set a home town yet. Please enter your home town name:")
+                        let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                        bot.send_message(chat_id, t("no_home_town", lang))
                             .reply_markup(cancel_keyboard)
                             .await?;
                     }
@@ -152,36 +193,36 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                                 
                                 // Отправляем главное меню для удобства
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
-                                bot.send_message(chat_id, "Choose another option:")
+                                bot.send_message(chat_id, t("choose_another_option", lang))
                                     .reply_markup(keyboard)
                                     .await?;
                             }
                             Err(e) => {
-                                bot.send_message(chat_id, format!("Sorry, I couldn't get the weather for your home town '{}'. Error: {}", home_town, e))
+                                bot.send_message(chat_id, format!("{} '{}'. {}: {}", 
+                                    t("error_weather", lang), home_town, t("error", lang), e))
                                     .await?;
                                 
                                 // Отправляем главное меню даже при ошибке
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
-                                bot.send_message(chat_id, "Choose another option:")
+                                bot.send_message(chat_id, t("choose_another_option", lang))
                                     .reply_markup(keyboard)
                                     .await?;
                             }
                         }
                     } else {
-                        // Предлагаем сразу ввести home town
-                        update_user_data(&state, chat_id, |user_data| {
-                            user_data.waiting_for_home_town = true;
-                        });
+                        bot.send_message(chat_id, t("no_home_town_use_set", lang))
+                            .await?;
                         
-                        let cancel_keyboard = make_cancel_keyboard();
-                        bot.send_message(chat_id, "You haven't set a home town yet. Please enter your home town name:")
-                            .reply_markup(cancel_keyboard)
+                        // Отправляем главное меню
+                        let keyboard = make_main_menu_keyboard(&state, chat_id);
+                        bot.send_message(chat_id, t("choose_another_option", lang))
+                            .reply_markup(keyboard)
                             .await?;
                     }
                 }
                 "my_towns" => {
                     let keyboard = make_my_towns_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "Manage your towns:")
+                    bot.send_message(chat_id, t("manage_towns", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
@@ -190,8 +231,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.waiting_for_home_town = true;
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Please enter the name of your home town:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_home_town", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -200,25 +241,25 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.waiting_for_interested_town = true;
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Please enter the name of the town you're interested in:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_interested_town", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
                 "remove_interested_town" => {
                     let user_data = get_user_data(&state, chat_id);
                     if user_data.interested_towns.is_empty() {
-                        bot.send_message(chat_id, "You don't have any interested towns to remove.")
+                        bot.send_message(chat_id, t("no_towns_to_remove", lang))
                             .await?;
                         
                         // Отправляем главное меню
                         let keyboard = make_main_menu_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Choose another option:")
+                        bot.send_message(chat_id, t("choose_another_option", lang))
                             .reply_markup(keyboard)
                             .await?;
                     } else {
                         let keyboard = make_remove_towns_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Select a town to remove:")
+                        bot.send_message(chat_id, t("select_town_to_remove", lang))
                             .reply_markup(keyboard)
                             .await?;
                     }
@@ -254,25 +295,25 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                             }
                         }
                     } else {
-                        bot.send_message(chat_id, "You haven't set a home town yet. Use 'Set Home Town' to set one.")
+                        bot.send_message(chat_id, t("no_home_town_use_set", lang))
                             .await?;
                         
                         // Отправляем главное меню
                         let keyboard = make_main_menu_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Choose another option:")
+                        bot.send_message(chat_id, t("choose_another_option", lang))
                             .reply_markup(keyboard)
                             .await?;
                     }
                 }
                 "back_to_main" => {
                     let keyboard = make_main_menu_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "Welcome! Please choose an option:")
+                    bot.send_message(chat_id, t("welcome", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
                 "back_to_interested_towns" => {
                     let keyboard = make_my_towns_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "Manage your towns:")
+                    bot.send_message(chat_id, t("manage_towns", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
@@ -297,7 +338,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                     });
                     
                     let keyboard = make_main_menu_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "Operation cancelled. Choose another option:")
+                    bot.send_message(chat_id, t("operation_cancelled", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
@@ -306,13 +347,13 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                 }
                 "alerts_menu" => {
                     let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "🚨 Weather Alerts Management\n\nChoose an option:")
+                    bot.send_message(chat_id, t("alerts_management", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
                 "add_alert" => {
-                    let keyboard = make_add_alert_keyboard();
-                    bot.send_message(chat_id, "Choose alert type:")
+                    let keyboard = make_add_alert_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("choose_alert_type", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
@@ -320,16 +361,16 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                 "remove_alert" => {
                     let user_data = get_user_data(&state, chat_id);
                     if user_data.weather_alerts.is_empty() {
-                        bot.send_message(chat_id, "You don't have any alerts to remove.")
+                        bot.send_message(chat_id, t("no_alerts", lang))
                             .await?;
                         
                         let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Choose another option:")
+                        bot.send_message(chat_id, t("choose_another_option", lang))
                             .reply_markup(keyboard)
                             .await?;
                     } else {
                         let keyboard = make_remove_alerts_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Select an alert to remove:")
+                        bot.send_message(chat_id, t("select_alert_to_remove", lang))
                             .reply_markup(keyboard)
                             .await?;
                     }
@@ -340,8 +381,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.pending_alert_type = Some(AlertType::StandardWeatherAlert);
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Enter the city name for standard weather alerts:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_city_standard_alert", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -351,8 +392,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.pending_alert_type = Some(AlertType::TemperatureThreshold { min: None, max: None });
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Enter the city name for temperature alerts:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_city_temperature_alert", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -362,8 +403,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.pending_alert_type = Some(AlertType::WindSpeed { max: 0.0 });
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Enter the city name for wind speed alerts:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_city_wind_alert", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -373,8 +414,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                         user_data.pending_alert_type = Some(AlertType::Humidity { min: None, max: None });
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Enter the city name for humidity alerts:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_city_humidity_alert", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -395,17 +436,18 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                                 
                                 // Отправляем главное меню
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
-                                bot.send_message(chat_id, "Choose another option:")
+                                bot.send_message(chat_id, t("choose_another_option", lang))
                                     .reply_markup(keyboard)
                                     .await?;
                             }
                             Err(e) => {
-                                bot.send_message(chat_id, format!("Sorry, I couldn't get the weather for '{}'. Error: {}", town_name, e))
+                                bot.send_message(chat_id, format!("{} '{}'. {}: {}", 
+                                    t("error_weather", lang), town_name, t("error", lang), e))
                                     .await?;
                                 
                                 // Отправляем главное меню даже при ошибке
                                 let keyboard = make_main_menu_keyboard(&state, chat_id);
-                                bot.send_message(chat_id, "Choose another option:")
+                                bot.send_message(chat_id, t("choose_another_option", lang))
                                     .reply_markup(keyboard)
                                     .await?;
                             }
@@ -417,12 +459,12 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                             user_data.interested_towns.retain(|town| town != town_name);
                         });
                         
-                        bot.send_message(chat_id, format!("Removed '{}' from your interested towns", town_name))
+                        bot.send_message(chat_id, format!("{} '{}'", t("town_removed", lang), town_name))
                             .await?;
                         
                         // Возвращаемся в interested towns меню
                         let keyboard = make_my_towns_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Manage your towns:")
+                        bot.send_message(chat_id, t("manage_towns", lang))
                             .reply_markup(keyboard)
                             .await?;
                     } else if data.starts_with("remove_alert_") {
@@ -432,12 +474,12 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                             user_data.weather_alerts.retain(|alert| alert.id != alert_id);
                         });
                         
-                        bot.send_message(chat_id, "Alert removed successfully!")
+                        bot.send_message(chat_id, t("alert_removed", lang))
                             .await?;
                         
                         // Возвращаемся в alerts меню
                         let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Weather Alerts Management:")
+                        bot.send_message(chat_id, t("alerts_management", lang))
                             .reply_markup(keyboard)
                             .await?;
                     } else if data.starts_with("check_alert_") {
@@ -453,83 +495,104 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery, state: SharedState) ->
                                     match weather_api::get_current_weather(&alert.city).await {
                                         Ok(weather) => {
                                             let status_emoji = if is_triggered { "🚨" } else { "✅" };
-                                            let status_text = if is_triggered { "ALERT TRIGGERED!" } else { "All Good" };
+                                            let status_text = if is_triggered { 
+                                                t("alert_triggered", lang) 
+                                            } else { 
+                                                t("all_good", lang) 
+                                            };
                                             
-                                                                        let alert_type_str = match &alert.alert_type {
-                                AlertType::StandardWeatherAlert => "🚨 Standard Weather Alert".to_string(),
-                                AlertType::TemperatureThreshold { min, max } => {
-                                    let range = match (min, max) {
-                                        (Some(min_val), Some(max_val)) => format!("{}°C - {}°C", min_val, max_val),
-                                        (Some(min_val), None) => format!("min {}°C", min_val),
-                                        (None, Some(max_val)) => format!("max {}°C", max_val),
-                                        (None, None) => "Temperature".to_string(),
-                                    };
-                                    format!("🌡️ Temperature Alert ({})", range)
-                                },
-                                AlertType::WindSpeed { max } => format!("💨 Wind Speed Alert (max {} km/h)", max),
-                                AlertType::Humidity { min, max } => {
-                                    let range = match (min, max) {
-                                        (Some(min_val), Some(max_val)) => format!("{}% - {}%", min_val, max_val),
-                                        (Some(min_val), None) => format!("min {}%", min_val),
-                                        (None, Some(max_val)) => format!("max {}%", max_val),
-                                        (None, None) => "Humidity".to_string(),
-                                    };
-                                    format!("💧 Humidity Alert ({})", range)
-                                },
-                            };
+                                            let alert_type_str = match &alert.alert_type {
+                                                AlertType::StandardWeatherAlert => t("standard_weather_alert", lang).to_string(),
+                                                AlertType::TemperatureThreshold { min, max } => {
+                                                    let range = match (min, max) {
+                                                        (Some(min_val), Some(max_val)) => format!("{}°C - {}°C", min_val, max_val),
+                                                        (Some(min_val), None) => format!("{} {}°C", t("min", lang), min_val),
+                                                        (None, Some(max_val)) => format!("{} {}°C", t("max", lang), max_val),
+                                                        (None, None) => t("temperature", lang).to_string(),
+                                                    };
+                                                    format!("{} ({})", t("temperature_alert_desc", lang), range)
+                                                },
+                                                AlertType::WindSpeed { max } => {
+                                                    let wind_desc = t("wind_speed_alert_desc", lang).replace("{}", &max.to_string());
+                                                    wind_desc
+                                                },
+                                                AlertType::Humidity { min, max } => {
+                                                    let range = match (min, max) {
+                                                        (Some(min_val), Some(max_val)) => format!("{}% - {}%", min_val, max_val),
+                                                        (Some(min_val), None) => format!("{} {}%", t("min", lang), min_val),
+                                                        (None, Some(max_val)) => format!("{} {}%", t("max", lang), max_val),
+                                                        (None, None) => t("humidity", lang).to_string(),
+                                                    };
+                                                    format!("{} ({})", t("humidity_alert_desc", lang), range)
+                                                },
+                                            };
                                             
-                                                                        let message = format!(
-                                "{} <b>{}</b>\n\n{}\n\n📍 <b>City:</b> {}\n📝 <b>Description:</b> {}\n\n<b>Current Weather:</b>\n🌡️ Temperature: {}°C\n☁️ Condition: {}\n💨 Wind: {} km/h\n💧 Humidity: {}%\n\n⏰ Created: {}\n{}",
-                                status_emoji,
-                                status_text,
-                                alert_type_str,
-                                weather.location.name,
-                                alert.description,
-                                weather.current.temperature,
-                                weather.current.condition.text,
-                                weather.current.wind_speed,
-                                weather.current.humidity,
-                                alert.created_at.format("%Y-%m-%d %H:%M"),
-                                if let Some(last_triggered) = alert.last_triggered {
-                                    format!("🔔 Last triggered: {}", last_triggered.format("%Y-%m-%d %H:%M"))
-                                } else {
-                                    "🔔 Never triggered".to_string()
-                                }
-                            );
+                                            let message = format!(
+                                                "{} <b>{}</b>\n\n{}\n\n📍 <b>{}:</b> {}\n📝 <b>{}:</b> {}\n\n<b>{}:</b>\n🌡️ {}: {}°C\n☁️ {}: {}\n💨 {}: {} {}\n💧 {}: {}%\n\n⏰ {}: {}\n{}",
+                                                status_emoji,
+                                                status_text,
+                                                alert_type_str,
+                                                t("city", lang),
+                                                weather.location.name,
+                                                t("description", lang),
+                                                alert.description,
+                                                t("current_weather", lang),
+                                                t("temperature", lang),
+                                                weather.current.temperature,
+                                                t("condition", lang),
+                                                weather.current.condition.text,
+                                                t("wind", lang),
+                                                weather.current.wind_speed,
+                                                t("kmh", lang),
+                                                t("humidity", lang),
+                                                weather.current.humidity,
+                                                t("created", lang),
+                                                alert.created_at.format("%Y-%m-%d %H:%M"),
+                                                if let Some(last_triggered) = alert.last_triggered {
+                                                    format!("🔔 {}: {}", t("last_triggered", lang), last_triggered.format("%Y-%m-%d %H:%M"))
+                                                } else {
+                                                    format!("🔔 {}", t("never_triggered", lang))
+                                                }
+                                            );
                                             
-                                                                        bot.send_message(chat_id, message)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await?;
+                                            bot.send_message(chat_id, message)
+                                                .parse_mode(teloxide::types::ParseMode::Html)
+                                                .await?;
                                         }
                                         Err(e) => {
-                                            bot.send_message(chat_id, format!("❌ Failed to get weather data for {}: {}", alert.city, e))
+                                            let error_msg = t("failed_weather_data", lang)
+                                                .replace("{}", &alert.city)
+                                                .replace("{}", &e.to_string());
+                                            bot.send_message(chat_id, error_msg)
                                                 .await?;
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    bot.send_message(chat_id, format!("❌ Error checking alert: {}", e))
+                                    let error_msg = t("error_checking_alert", lang)
+                                        .replace("{}", &e.to_string());
+                                    bot.send_message(chat_id, error_msg)
                                         .await?;
                                 }
                             }
                         } else {
-                            bot.send_message(chat_id, "❌ Alert not found.")
+                            bot.send_message(chat_id, t("alert_not_found", lang))
                                 .await?;
                         }
-                        
+                            
                         // Возвращаемся в alerts меню
                         let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Weather Alerts Management:")
+                        bot.send_message(chat_id, t("alerts_management", lang))
                             .reply_markup(keyboard)
                             .await?;
 
                     } else {
-                    bot.send_message(chat_id, "Unknown button.")
-                        .await?;
+                        bot.send_message(chat_id, t("unknown_button", lang))
+                            .await?;
                         
                         // Отправляем главное меню
                         let keyboard = make_main_menu_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Choose another option:")
+                        bot.send_message(chat_id, t("choose_another_option", lang))
                             .reply_markup(keyboard)
                             .await?;
                     }
@@ -545,6 +608,7 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
     if let Some(text) = msg.text() {
         let chat_id = msg.chat.id;
         let user_data = get_user_data(&state, chat_id);
+        let lang = user_data.language;
         
         // Check if user is waiting for home town input
         if user_data.waiting_for_home_town {
@@ -553,34 +617,38 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 user_data.home_town = Some(text.to_string());
             });
             
-            bot.send_message(chat_id, format!("Home town set to: {}", text))
+            bot.send_message(chat_id, format!("{} {}", t("home_town_set", lang), text))
                 .await?;
             
             // Отправляем главное меню для удобства
             let keyboard = make_main_menu_keyboard(&state, chat_id);
-            bot.send_message(chat_id, "Choose another option:")
+            bot.send_message(chat_id, t("choose_another_option", lang))
                 .reply_markup(keyboard)
                 .await?;
         }
         // Check if user is waiting for interested town input
         else if user_data.waiting_for_interested_town {
-            update_user_data(&state, chat_id, |user_data| {
-                user_data.waiting_for_interested_town = false;
-                if !user_data.interested_towns.contains(&text.to_string()) {
+            let user_data_clone = get_user_data(&state, chat_id);
+            if user_data_clone.interested_towns.contains(&text.to_string()) {
+                bot.send_message(chat_id, t("town_already_exists", lang))
+                    .await?;
+            } else {
+                update_user_data(&state, chat_id, |user_data| {
+                    user_data.waiting_for_interested_town = false;
                     user_data.interested_towns.push(text.to_string());
-                }
-            });
-            
-            bot.send_message(chat_id, format!("Added '{}' to your interested towns", text))
-                .await?;
+                });
+                
+                bot.send_message(chat_id, format!("{} {}", t("town_added", lang), text))
+                    .await?;
+            }
             
             // Возвращаемся в interested towns меню
             let keyboard = make_my_towns_keyboard(&state, chat_id);
-            bot.send_message(chat_id, "Manage your towns:")
+            bot.send_message(chat_id, t("manage_towns", lang))
                 .reply_markup(keyboard)
                 .await?;
         }
-                // Check if user is waiting for city input (current weather only)
+        // Check if user is waiting for city input (current weather only)
         else if user_data.waiting_for_city {
             // Reset the waiting state
             update_user_data(&state, chat_id, |user_data| {
@@ -599,14 +667,17 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                         .await?;
                 }
                 Err(e) => {
-                    bot.send_message(chat_id, format!("Sorry, I couldn't get the weather for '{}'. Please check the city name and try again.\n\nError: {}", text, e))
+                    let error_msg = t("weather_error_check_city", lang)
+                        .replace("{}", text)
+                        .replace("{}", &e.to_string());
+                    bot.send_message(chat_id, error_msg)
                         .await?;
                 }
             }
             
             // Return to main menu after weather
             let keyboard = make_main_menu_keyboard(&state, chat_id);
-            bot.send_message(chat_id, "Choose another option:")
+            bot.send_message(chat_id, t("choose_another_option", lang))
                 .reply_markup(keyboard)
                 .await?;
         }
@@ -629,14 +700,15 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                         .await?;
                 }
                 Err(e) => {
-                    bot.send_message(chat_id, format!("Sorry, I couldn't get the forecast for '{}'. Error: {}", text, e))
+                    bot.send_message(chat_id, format!("{} '{}'. {}: {}", 
+                        t("error_forecast", lang), text, t("error", lang), e))
                         .await?;
                 }
             }
             
             // Return to main menu after forecast
             let keyboard = make_main_menu_keyboard(&state, chat_id);
-            bot.send_message(chat_id, "Choose another option:")
+            bot.send_message(chat_id, t("choose_another_option", lang))
                 .reply_markup(keyboard)
                 .await?;
         }
@@ -654,8 +726,9 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                         user_data.waiting_for_alert_hours_input = true;
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, format!("🕐 How many hours ahead should I warn you about weather in '{}'?\n\nEnter a number (1-72 hours):", text))
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    let message = t("how_many_hours", lang).replace("{}", text);
+                    bot.send_message(chat_id, message)
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -664,8 +737,8 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                         user_data.waiting_for_alert_temperature_min = true;
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Enter minimum temperature threshold (°C) or type 'skip' to skip:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_min_temp", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -674,8 +747,8 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                         user_data.waiting_for_alert_wind_speed = true;
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Enter maximum wind speed threshold (km/h):")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_max_wind", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
@@ -684,17 +757,17 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                         user_data.waiting_for_alert_humidity_min = true;
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "Enter minimum humidity threshold (%) or type 'skip' to skip:")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("enter_min_humidity", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
                 _ => {
-                    bot.send_message(chat_id, "Error: Unknown alert type. Please try again.")
+                    bot.send_message(chat_id, t("error_unknown_alert", lang))
                         .await?;
                     
                     let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                    bot.send_message(chat_id, "Weather Alerts Management:")
+                    bot.send_message(chat_id, t("alerts_management", lang))
                         .reply_markup(keyboard)
                         .await?;
                 }
@@ -708,7 +781,7 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 match text.parse::<f32>() {
                     Ok(temp) => Some(temp),
                     Err(_) => {
-                        bot.send_message(chat_id, "Invalid temperature value. Please enter a valid number or 'skip':")
+                        bot.send_message(chat_id, t("invalid_temp", lang))
                             .await?;
                         return Ok(());
                     }
@@ -723,8 +796,8 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 }
             });
             
-            let cancel_keyboard = make_cancel_keyboard();
-            bot.send_message(chat_id, "Enter maximum temperature threshold (°C) or type 'skip' to skip:")
+            let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+            bot.send_message(chat_id, t("enter_max_temp", lang))
                 .reply_markup(cancel_keyboard)
                 .await?;
         }
@@ -735,7 +808,7 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 match text.parse::<f32>() {
                     Ok(temp) => Some(temp),
                     Err(_) => {
-                        bot.send_message(chat_id, "Invalid temperature value. Please enter a valid number or 'skip':")
+                        bot.send_message(chat_id, t("invalid_temp", lang))
                             .await?;
                         return Ok(());
                     }
@@ -750,8 +823,8 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 }
             });
             
-            let cancel_keyboard = make_cancel_keyboard();
-            bot.send_message(chat_id, "🕐 How many hours ahead should I warn you about temperature changes?\n\nEnter a number (1-72 hours):")
+            let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+            bot.send_message(chat_id, t("hours_temp_warning", lang))
                 .reply_markup(cancel_keyboard)
                 .await?;
         }
@@ -767,13 +840,13 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                         }
                     });
                     
-                    let cancel_keyboard = make_cancel_keyboard();
-                    bot.send_message(chat_id, "🕐 How many hours ahead should I warn you about wind conditions?\n\nEnter a number (1-72 hours):")
+                    let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+                    bot.send_message(chat_id, t("hours_wind_warning", lang))
                         .reply_markup(cancel_keyboard)
                         .await?;
                 }
                 Err(_) => {
-                    bot.send_message(chat_id, "Invalid wind speed value. Please enter a valid number:")
+                    bot.send_message(chat_id, t("invalid_wind", lang))
                         .await?;
                 }
             }
@@ -786,7 +859,7 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 match text.parse::<u32>() {
                     Ok(humidity) => Some(humidity),
                     Err(_) => {
-                        bot.send_message(chat_id, "Invalid humidity value. Please enter a valid number (0-100) or 'skip':")
+                        bot.send_message(chat_id, t("invalid_humidity", lang))
                             .await?;
                         return Ok(());
                     }
@@ -801,8 +874,8 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 }
             });
             
-            let cancel_keyboard = make_cancel_keyboard();
-            bot.send_message(chat_id, "Enter maximum humidity threshold (%) or type 'skip' to skip:")
+            let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+            bot.send_message(chat_id, t("enter_max_humidity", lang))
                 .reply_markup(cancel_keyboard)
                 .await?;
         }
@@ -813,7 +886,7 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 match text.parse::<u32>() {
                     Ok(humidity) => Some(humidity),
                     Err(_) => {
-                        bot.send_message(chat_id, "Invalid humidity value. Please enter a valid number (0-100) or 'skip':")
+                        bot.send_message(chat_id, t("invalid_humidity", lang))
                             .await?;
                         return Ok(());
                     }
@@ -828,8 +901,8 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                 }
             });
             
-            let cancel_keyboard = make_cancel_keyboard();
-            bot.send_message(chat_id, "🕐 How many hours ahead should I warn you about humidity changes?\n\nEnter a number (1-72 hours):")
+            let cancel_keyboard = make_cancel_keyboard(&state, chat_id);
+            bot.send_message(chat_id, t("hours_humidity_warning", lang))
                 .reply_markup(cancel_keyboard)
                 .await?;
         }
@@ -854,24 +927,27 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
                             user_data.pending_alert_hours = None;
                         });
                         
-                        bot.send_message(chat_id, format!("✅ Weather alert created for '{}' with {} hours advance warning!", city, hours))
+                        let message = format!("{} '{}' {}", 
+                            t("alert_created", lang), city, 
+                            t("with_hours_warning", lang).replace("{}", &hours.to_string()));
+                        bot.send_message(chat_id, message)
                             .await?;
                         
                         let keyboard = make_alerts_menu_keyboard(&state, chat_id);
-                        bot.send_message(chat_id, "Weather Alerts Management:")
+                        bot.send_message(chat_id, t("alerts_management", lang))
                             .reply_markup(keyboard)
                             .await?;
                     } else {
-                        bot.send_message(chat_id, "Error: No pending alert data found.")
+                        bot.send_message(chat_id, t("error_no_pending_alert", lang))
                             .await?;
                     }
                 }
                 Ok(_) => {
-                    bot.send_message(chat_id, "⚠️ Please enter a number between 1 and 72 hours:")
+                    bot.send_message(chat_id, t("invalid_hours", lang))
                         .await?;
                 }
                 Err(_) => {
-                    bot.send_message(chat_id, "⚠️ Please enter a valid number:")
+                    bot.send_message(chat_id, t("invalid_number", lang))
                         .await?;
                 }
             }
@@ -881,44 +957,47 @@ pub async fn message_handler(bot: Bot, msg: Message, state: SharedState) -> Hand
     Ok(())
 }
 
-pub fn make_main_menu_keyboard(_state: &SharedState, _chat_id: ChatId) -> InlineKeyboardMarkup {
+pub fn make_main_menu_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
 
-    // Красиво организованное главное меню
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "Current weather",
+        t("weather", lang),
         "current_weather_menu",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "Forecast", 
+        t("forecast", lang), 
         "forecast_menu"
     )]);
     
-    keyboard.push(vec![InlineKeyboardButton::callback("Interested towns", "my_towns")]);
+    keyboard.push(vec![InlineKeyboardButton::callback(t("interested_towns", lang), "my_towns")]);
     
-    keyboard.push(vec![InlineKeyboardButton::callback("🚨 Weather Alerts", "alerts_menu")]);
+    keyboard.push(vec![InlineKeyboardButton::callback(t("alerts", lang), "alerts_menu")]);
+    
+    keyboard.push(vec![InlineKeyboardButton::callback(t("settings", lang), "settings_menu")]);
 
     InlineKeyboardMarkup::new(keyboard)
 }
 
 pub fn make_my_towns_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
     let user_data = get_user_data(state, chat_id);
     
     // Home town section
     if let Some(home_town) = &user_data.home_town {
         keyboard.push(vec![InlineKeyboardButton::callback(
-            &format!("🏠 Home: {} (View Weather)", home_town),
+            &format!("{} {} {}", t("home_prefix", lang), home_town, t("view_weather", lang)),
             "view_home_weather",
         )]);
         keyboard.push(vec![InlineKeyboardButton::callback(
-            "🔄 Change Home Town",
+            t("change_home_town", lang),
             "set_home_town",
         )]);
     } else {
         keyboard.push(vec![InlineKeyboardButton::callback(
-            "🏠 Set Home Town",
+            t("set_home_town", lang),
             "set_home_town",
         )]);
     }
@@ -926,7 +1005,7 @@ pub fn make_my_towns_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKey
     // Interested towns section
     if !user_data.interested_towns.is_empty() {
         keyboard.push(vec![InlineKeyboardButton::callback(
-            "--- 🌍 Interested Towns ---",
+            t("interested_towns_separator", lang),
             "noop", // This button does nothing, just a separator
         )]);
         
@@ -940,19 +1019,19 @@ pub fn make_my_towns_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKey
     
     // Action buttons
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "➕ Add Interested Town",
+        t("add_interested_town", lang),
         "add_interested_town",
     )]);
     
     if !user_data.interested_towns.is_empty() {
         keyboard.push(vec![InlineKeyboardButton::callback(
-            "🗑️ Remove Interested Town",
+            t("remove_interested_town", lang),
             "remove_interested_town",
         )]);
     }
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "← Back to Main Menu",
+        t("back_to_main", lang),
         "back_to_main",
     )]);
 
@@ -960,12 +1039,13 @@ pub fn make_my_towns_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKey
 }
 
 pub fn make_remove_towns_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
     let user_data = get_user_data(state, chat_id);
     
     if !user_data.interested_towns.is_empty() {
         keyboard.push(vec![InlineKeyboardButton::callback(
-            "--- 🗑️ Select Town to Remove ---",
+            t("select_town_separator", lang),
             "noop", // This button does nothing, just a separator
         )]);
         
@@ -978,57 +1058,60 @@ pub fn make_remove_towns_keyboard(state: &SharedState, chat_id: ChatId) -> Inlin
     }
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "← Back to Interested Towns",
+        t("back_to_interested_towns", lang),
         "back_to_interested_towns",
     )]);
 
     InlineKeyboardMarkup::new(keyboard)
 }
 
-pub fn make_cancel_keyboard() -> InlineKeyboardMarkup {
+pub fn make_cancel_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let keyboard = vec![
-        vec![InlineKeyboardButton::callback("Cancel", "cancel")],
+        vec![InlineKeyboardButton::callback(t("cancel", lang), "cancel")],
     ];
 
     InlineKeyboardMarkup::new(keyboard)
 }
 
-pub fn make_current_weather_keyboard(_state: &SharedState, _chat_id: ChatId) -> InlineKeyboardMarkup {
+pub fn make_current_weather_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
 
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "For any city",
+        t("weather_for_city", lang),
         "get_weather_for",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "For home",
+        t("weather_home", lang),
         "get_weather_home",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "← Back to Main Menu",
+        t("back_to_main", lang),
         "back_to_main",
     )]);
 
     InlineKeyboardMarkup::new(keyboard)
 }
 
-pub fn make_forecast_keyboard(_state: &SharedState, _chat_id: ChatId) -> InlineKeyboardMarkup {
+pub fn make_forecast_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
 
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "For any city",
+        t("forecast_for_city", lang),
         "get_forecast_for",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "For home",
+        t("forecast_home", lang),
         "get_forecast_home",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "← Back to Main Menu",
+        t("back_to_main", lang),
         "back_to_main",
     )]);
 
@@ -1036,13 +1119,14 @@ pub fn make_forecast_keyboard(_state: &SharedState, _chat_id: ChatId) -> InlineK
 }
 
 pub fn make_alerts_menu_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
     let user_data = get_user_data(state, chat_id);
     
     // Показываем список алертов, если они есть
     if !user_data.weather_alerts.is_empty() {
         keyboard.push(vec![InlineKeyboardButton::callback(
-            "--- 🚨 Your Weather Alerts ---",
+            t("your_alerts_separator", lang),
             "noop",
         )]);
         
@@ -1056,14 +1140,15 @@ pub fn make_alerts_menu_keyboard(state: &SharedState, chat_id: ChatId) -> Inline
             
             let status = if alert.is_active { "✅" } else { "❌" };
             
+            let alert_type_name = match &alert.alert_type {
+                AlertType::StandardWeatherAlert => t("alert_type_standard", lang),
+                AlertType::TemperatureThreshold { .. } => t("alert_type_temperature", lang),
+                AlertType::WindSpeed { .. } => t("alert_type_wind", lang),
+                AlertType::Humidity { .. } => t("alert_type_humidity", lang),
+            };
+            
             keyboard.push(vec![InlineKeyboardButton::callback(
-                &format!("{} {} - {} {}", alert_type_emoji, alert.city, 
-                        match &alert.alert_type {
-                            AlertType::StandardWeatherAlert => "Standard",
-                            AlertType::TemperatureThreshold { .. } => "Temperature",
-                            AlertType::WindSpeed { .. } => "Wind",
-                            AlertType::Humidity { .. } => "Humidity",
-                        }, status),
+                &format!("{} {} - {} {}", alert_type_emoji, alert.city, alert_type_name, status),
                 &format!("check_alert_{}", alert.id),
             )]);
         }
@@ -1071,50 +1156,51 @@ pub fn make_alerts_menu_keyboard(state: &SharedState, chat_id: ChatId) -> Inline
     
     // Кнопки управления
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "➕ Add Alert",
+        t("add_alert", lang),
         "add_alert",
     )]);
     
     if !user_data.weather_alerts.is_empty() {
         keyboard.push(vec![InlineKeyboardButton::callback(
-            "🗑️ Remove Alert",
+            t("remove_alert", lang),
             "remove_alert",
         )]);
     }
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "← Back to Main Menu",
+        t("back_to_main", lang),
         "back_to_main",
     )]);
 
     InlineKeyboardMarkup::new(keyboard)
 }
 
-pub fn make_add_alert_keyboard() -> InlineKeyboardMarkup {
+pub fn make_add_alert_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "🚨 Standard Weather Alert",
+        t("standard_alert", lang),
         "add_standard_alert",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "🌡️ Temperature Alert",
+        t("temperature_alert", lang),
         "add_temperature_alert",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "💨 Wind Speed Alert",
+        t("wind_alert", lang),
         "add_wind_alert",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "💧 Humidity Alert",
+        t("humidity_alert", lang),
         "add_humidity_alert",
     )]);
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "← Back to Alerts Menu",
+        t("back_to_alerts", lang),
         "alerts_menu",
     )]);
 
@@ -1122,25 +1208,39 @@ pub fn make_add_alert_keyboard() -> InlineKeyboardMarkup {
 }
 
 pub fn make_remove_alerts_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
     let mut keyboard = vec![];
     let user_data = get_user_data(state, chat_id);
     
     if !user_data.weather_alerts.is_empty() {
         keyboard.push(vec![InlineKeyboardButton::callback(
-            "--- 🗑️ Select Alert to Remove ---",
+            t("select_alert_separator", lang),
             "noop",
         )]);
         
         for alert in &user_data.weather_alerts {
             let alert_type_str = match &alert.alert_type {
-                AlertType::StandardWeatherAlert => "🚨 Standard",
-                AlertType::TemperatureThreshold { .. } => "🌡️ Temperature",
-                AlertType::WindSpeed { .. } => "💨 Wind",
-                AlertType::Humidity { .. } => "💧 Humidity",
+                AlertType::StandardWeatherAlert => "🚨",
+                AlertType::TemperatureThreshold { .. } => "🌡️",
+                AlertType::WindSpeed { .. } => "💨",
+                AlertType::Humidity { .. } => "💧",
             };
             
-            let button_text = format!("{} - {} ({})", alert_type_str, alert.city, 
-                                    if alert.is_active { "Active" } else { "Inactive" });
+            let alert_type_name = match &alert.alert_type {
+                AlertType::StandardWeatherAlert => t("alert_type_standard", lang),
+                AlertType::TemperatureThreshold { .. } => t("alert_type_temperature", lang),
+                AlertType::WindSpeed { .. } => t("alert_type_wind", lang),
+                AlertType::Humidity { .. } => t("alert_type_humidity", lang),
+            };
+            
+            let status_text = if alert.is_active { 
+                t("active", lang) 
+            } else { 
+                t("inactive", lang) 
+            };
+            
+            let button_text = format!("{} {} - {} ({})", alert_type_str, alert.city, 
+                                    alert_type_name, status_text);
             
             keyboard.push(vec![InlineKeyboardButton::callback(
                 &button_text,
@@ -1150,8 +1250,46 @@ pub fn make_remove_alerts_keyboard(state: &SharedState, chat_id: ChatId) -> Inli
     }
     
     keyboard.push(vec![InlineKeyboardButton::callback(
-        "← Back to Alerts Menu",
+        t("back_to_alerts", lang),
         "alerts_menu",
+    )]);
+
+    InlineKeyboardMarkup::new(keyboard)
+}
+
+pub fn make_language_selection_keyboard() -> InlineKeyboardMarkup {
+    let mut keyboard = vec![];
+    
+    keyboard.push(vec![InlineKeyboardButton::callback(
+        "🇺🇸 English",
+        "language_en",
+    )]);
+    
+    keyboard.push(vec![InlineKeyboardButton::callback(
+        "🇷🇺 Русский",
+        "language_ru",
+    )]);
+    
+    keyboard.push(vec![InlineKeyboardButton::callback(
+        "← Back to Main Menu",
+        "back_to_main",
+    )]);
+
+    InlineKeyboardMarkup::new(keyboard)
+}
+
+pub fn make_settings_keyboard(state: &SharedState, chat_id: ChatId) -> InlineKeyboardMarkup {
+    let lang = get_user_data(state, chat_id).language;
+    let mut keyboard = vec![];
+    
+    keyboard.push(vec![InlineKeyboardButton::callback(
+        t("change_language", lang),
+        "change_language",
+    )]);
+    
+    keyboard.push(vec![InlineKeyboardButton::callback(
+        t("back_to_main", lang),
+        "back_to_main",
     )]);
 
     InlineKeyboardMarkup::new(keyboard)
