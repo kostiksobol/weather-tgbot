@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "tester",
+    "example",
 ]
 
 [package]
