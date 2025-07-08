@@ -11,7 +11,11 @@ pub struct Storage {
 
 impl Storage {
     pub fn new() -> Result<Self, sled::Error> {
-        let db = sled::open("weather_bot_data")?;
+        // Configure Sled with a specific cache capacity to avoid memory limit errors
+        let db = sled::Config::new()
+            .path("weather_bot_data")
+            .cache_capacity(256 * 1024 * 1024) 
+            .open()?;
         log::info!("Sled database opened successfully");
         Ok(Storage { db: Arc::new(db) })
     }
